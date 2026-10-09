@@ -11,7 +11,7 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 import {configuration} from './config.js';
 export {configuration} from './config.js';
 import {googleConfiguration} from './auth.js';
-import {discoveryInput,discoverPrivatePages} from './discovery.js';
+import {discoveryInput,discoverPrivatePages,searchConfiguration} from './discovery.js';
 
 function readCookies(request) {
   return Object.fromEntries((request.headers.get('cookie') || '').split(';').flatMap(part => {
@@ -42,7 +42,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
     if (!['GET','POST'].includes(request.method)) return reply(405,{error:'Method not allowed.'});
     if (request.method==='POST' && (request.headers.get('origin')!==url.origin || request.headers.get('sec-fetch-site')==='cross-site')) return reply(403,{error:'Open Pull GTM directly to continue.'});
     if(resource==='ai'&&request.method==='GET'){const ai=aiConfiguration(env);return reply(200,{configured:Boolean(config&&ai.credential),model:ai.model,requiresSignIn:true});}
-    if(resource==='discovery'&&request.method==='GET')return reply(200,{configured:Boolean(config&&env.BRAVE_SEARCH_API_KEY),provider:env.BRAVE_SEARCH_API_KEY?'Brave Search API':null,requiresSignIn:true});
+    if(resource==='discovery'&&request.method==='GET'){const search=searchConfiguration(env);return reply(200,{configured:Boolean(config&&search),provider:search?.provider||null,maxQueries:search?.maxQueries||null,requiresSignIn:true});}
     if (!config) {
       if(resource==='session'&&request.method==='GET')return reply(200,{configured:false,user:null});
       if(resource==='session'&&request.method==='POST'&&request.headers.get('content-type')?.startsWith('application/json')){
@@ -104,7 +104,12 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       if(request.headers.get('x-pull-account')!==user.id)return reply(409,{code:'ACCOUNT_CHANGED',error:'Your account changed in another tab. Open your cloud workspace again.'});
       if(resource==='discovery'){
         let input;try{input=discoveryInput(body);}catch(error){return reply(400,{error:error.message});}
-        try{return reply(200,await discoverPrivatePages(input,{key:env.BRAVE_SEARCH_API_KEY,transport}));}
+        const search=searchConfiguration(env);
+        if(!search)return reply(200,await discoverPrivatePages(input));
+        const budget=await client(access).rpc('claim_pull_search_requests',{p_requests:search.maxQueries});
+        if(budget.error)return reply(503,{error:'Search budget controls are unavailable. No search credits were used.'});
+        if(budget.data!==true)return reply(429,{error:'The daily source-search budget is reached. Your imported lists and manual review still work.'});
+        try{return reply(200,await discoverPrivatePages(input,{...search,transport}));}
         catch(error){return reply(503,{error:error.message});}
       }
       if(resource==='ai'){

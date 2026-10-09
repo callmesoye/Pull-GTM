@@ -1,6 +1,7 @@
 {
   "name": "Pull GTM",
-  "release": "2026-10-09-own-agent-chat-relay",
+  "release": "2026-10-09-budgeted-source-search",
   "backend": "Supabase cyakphnpljeesotbjerz",
-  "mcp": "pull-mcp v3"
+  "mcp": "pull-mcp v3",
+  "searchAdapters": ["serper", "brave"]
 }

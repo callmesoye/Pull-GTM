@@ -28,3 +28,10 @@ Cloud sign-in/save/restore, Google sign-in, actual agent relay answers, workflow
 The business, trade and career workspace and platform handoff choices are included in the source. Platform selection does not connect or send. Stripe billing and an owner admin console are not yet implemented. See [PLATFORM-AUTOMATION.md](PLATFORM-AUTOMATION.md).
 
 Support links use [gbosheabisoye.ag@gmail.com](mailto:gbosheabisoye.ag@gmail.com) and the owner’s [booking calendar](https://calendar.app.google/rhwGJ6n3zaRy5tdr8).
+# Budgeted source search — 9 October 2026
+
+Serper and Brave adapters share the same existing discovery form. Search keys stay server-side. Default maximum is two provider requests per search; daily database reservations allow 20 per owner and 200 for the project. No paid fallback or result cache is used. Government/public pages and uncertain private-sector pages are excluded. Results remain source-page candidates, not invented people, buyer intent, or verified contacts.
+
+Validation: 144 local tests and syntax checks passed. Supabase migration `pull_search_request_budget` was applied to the existing Pull project. The transaction test passed for owner/project limits, invalid reservations, anonymous denial, and counter permissions; fixtures rolled back. A live Serper/Brave search is not verified until a provider key is configured.
+
+Google setup: dedicated OAuth project `booming-quasar-511111-p6` created without linking billing. Supabase Site URL is `https://pull-gtm.vercel.app` and the exact callback return URL `/api/auth` is allowlisted. Google Cloud requires the owner's 2-Step Verification before OAuth client setup can continue. Google login is not yet enabled or tested end to end.
