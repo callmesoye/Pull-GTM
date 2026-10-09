@@ -1,38 +1,16 @@
 import {createClient} from './supabase-rest.js';
 import {createHash,randomBytes} from 'node:crypto';
 import {aiConfiguration,prepareAI,generateReply} from './ai.js';
+import {testAgentConnection} from './agent-test.js';
 
 const MAX_BYTES = 3 * 1024 * 1024;
-const fields = ['version','prospects','shortlist','drafts','audit','mode','identity','context','website','offer','setup','rules','duplicates'];
+import {validateWorkspace} from '../dist/workspace.js';
+export {validateWorkspace} from '../dist/workspace.js';
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 
-export function validateWorkspace(value) {
-  if (!object(value) || value.version !== 1 || !Array.isArray(value.prospects) || !Array.isArray(value.shortlist) || !Array.isArray(value.audit) || !object(value.drafts) || !object(value.rules)) throw new Error('Invalid workspace format.');
-  if (!['empty','import','example'].includes(value.mode) || !['company','personal'].includes(value.context) || !['identity','website','offer'].every(k => typeof value[k] === 'string')) throw new Error('Invalid workspace details.');
-  const ids = new Set();
-  for (const p of value.prospects) {
-    if (!object(p) || typeof p.id !== 'string' || !p.id || ids.has(p.id)) throw new Error('Prospects need unique IDs.');
-    ids.add(p.id);
-  }
-  if (!value.shortlist.every(id => typeof id === 'string' && ids.has(id)) || !Object.keys(value.drafts).every(id => ids.has(id))) throw new Error('Workspace contains unknown prospect references.');
-  if(new Set(value.shortlist).size!==value.shortlist.length)throw new Error('Shortlist contains duplicate references.');
-  if(!Object.values(value.drafts).every(d=>object(d)&&typeof d.body==='string'&&typeof d.subject==='string'&&['email','personal','company'].includes(d.channel)&&typeof d.ready==='boolean'))throw new Error('Invalid outreach draft.');
-  if(!value.audit.every(a=>object(a)&&typeof a.action==='string'&&typeof a.detail==='string'&&typeof a.at==='string'&&Number.isFinite(Date.parse(a.at))))throw new Error('Invalid activity record.');
-  if(!['roles','industries','countries','min','max','signals','days'].every(k=>typeof value.rules[k]==='string')||typeof value.rules.evidence!=='boolean')throw new Error('Invalid audience criteria.');
-  const payload = Object.fromEntries(fields.filter(k => Object.hasOwn(value,k)).map(k => [k,value[k]]));
-  payload.remember = false;
-  return payload;
-}
-
-export function configuration(env) {
-  try {
-    const url = new URL(env.SUPABASE_URL);
-    const key = env.SUPABASE_PUBLISHABLE_KEY || '';
-    if (url.protocol !== 'https:' || !key || key.startsWith('sb_secret_')) return null;
-    if (key.split('.').length === 3 && JSON.parse(Buffer.from(key.split('.')[1],'base64url').toString()).role === 'service_role') return null;
-    return {url:url.origin,key};
-  } catch {return null;}
-}
+import {configuration} from './config.js';
+export {configuration} from './config.js';
+import {googleConfiguration} from './auth.js';
 
 function readCookies(request) {
   return Object.fromEntries((request.headers.get('cookie') || '').split(';').flatMap(part => {
@@ -45,7 +23,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
   const config=configuration(env);
   const client = token => clientFactory(config.url,config.key,{
     auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},
-    global:{headers:token?{Authorization:'Bearer '+token}:{},fetch:(url,options={})=>transport(url,{...options,signal:options.signal||AbortSignal.timeout(15000)})}
+    global:{headers:token?{Authorization:'Bearer '+token}:{},fetch:(url,options={})=>transport(url,{...options,signal:options.signal||AbortSignal.timeout(15000),redirect:'error'})}
   });
 
   async function handle(request,resource) {
@@ -58,7 +36,8 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
     };
     const cookie=(name,value,age)=>outCookies.push(`${prefix}${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${secure?'; Secure':''}`);
     const clear=()=>{cookie('access','',0);cookie('refresh','',0);};
-    const sessionCookies=s=>{cookie('access',s.access_token,Math.max(60,s.expires_in||3600));cookie('refresh',s.refresh_token,60*60*24*30);};
+    const validSession=s=>object(s)&&['access_token','refresh_token'].every(k=>typeof s[k]==='string'&&s[k]&&encodeURIComponent(s[k]).length<=3800)&&Number.isSafeInteger(s.expires_in)&&s.expires_in>0;
+    const sessionCookies=s=>{if(!validSession(s))throw new Error('Invalid provider session');cookie('access',s.access_token,Math.max(60,Math.min(s.expires_in,2592000)));cookie('refresh',s.refresh_token,60*60*24*30);};
     if (!['GET','POST'].includes(request.method)) return reply(405,{error:'Method not allowed.'});
     if (request.method==='POST' && (request.headers.get('origin')!==url.origin || request.headers.get('sec-fetch-site')==='cross-site')) return reply(403,{error:'Open Pull GTM directly to continue.'});
     if(resource==='ai'&&request.method==='GET'){const ai=aiConfiguration(env);return reply(200,{configured:Boolean(config&&ai.credential),model:ai.model,requiresSignIn:true});}
@@ -81,20 +60,21 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
     }
     let access=cookies[prefix+'access'],refresh=cookies[prefix+'refresh'];
     const verified=async()=>{
-      let result=access?await base.auth.getUser(access):{data:{user:null},error:{status:401}};
+      let pendingSession=null;let result=access?await base.auth.getUser(access):{data:{user:null},error:{status:401}};
       if(result.error&&[400,401,403].includes(result.error.status)&&refresh) {
         const renewed=await base.auth.refreshSession({refresh_token:refresh});
-        if(renewed.error||!renewed.data.session){if(renewed.error?.status>=500)throw new Error('Provider unavailable');clear();return null;}
-        access=renewed.data.session.access_token;refresh=renewed.data.session.refresh_token;sessionCookies(renewed.data.session);
+        if(!renewed.error&&!renewed.data.session)throw new Error('Invalid provider session');if(renewed.error||!renewed.data.session){if(renewed.error?.status===429||renewed.error?.status>=500)throw new Error('Provider unavailable');clear();return null;}
+        if(!validSession(renewed.data.session))throw new Error('Invalid provider session');pendingSession=renewed.data.session;access=pendingSession.access_token;refresh=pendingSession.refresh_token;
         result=await base.auth.getUser(access);
       }
-      if(result.error?.status>=500)throw new Error('Provider unavailable');
+      if(result.error?.status===429||result.error?.status>=500)throw new Error('Provider unavailable');
       if(result.error||!result.data.user||typeof result.data.user.id!=='string'||!result.data.user.id||result.data.user.is_anonymous)return null;
+      if(pendingSession){if(pendingSession.user?.id&&pendingSession.user.id!==result.data.user.id)throw new Error('Invalid provider session');sessionCookies(pendingSession);}
       return result.data.user;
     };
     try {
       if(resource==='session') {
-        if(request.method==='GET') {const user=await verified();return reply(200,{configured:true,user:user?{id:user.id,email:user.email}:null});}
+        if(request.method==='GET') {const user=await verified();return reply(200,{configured:true,providers:{google:Boolean(googleConfiguration(env))},user:user?{id:user.id,email:user.email}:null});}
         if(body.action==='logout') {
           let revocationConfirmed=true;
           try{
@@ -110,10 +90,12 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
         if(typeof body.email!=='string'||!/^\S+@\S+\.\S+$/.test(body.email)||typeof body.password!=='string'||body.password.length<8||body.password.length>256)return reply(400,{error:'Use a valid email and a password of at least 8 characters.'});
         const credentials={email:body.email.trim(),password:body.password};
         const result=body.action==='signup'?await base.auth.signUp(credentials):await base.auth.signInWithPassword(credentials);
-        if(result.error?.status>=500)return reply(503,{error:'The account service is temporarily unavailable. Your local work is safe.'});
-        if(result.error)return reply(result.error.status===429?429:400,{error:body.action==='login'?'Unable to sign in. Check your details and confirm your email.':'Unable to create an account. Check your details or try signing in.'});
-        if(result.data.session)sessionCookies(result.data.session);
-        return reply(200,{user:result.data.session?{id:result.data.user.id,email:result.data.user.email}:null,confirmationRequired:!result.data.session});
+        if(result.error?.status>=500)throw new Error('Provider unavailable');
+        if(result.error?.status===429)return reply(429,{error:'Too many account attempts. Wait a moment, then try again.'});
+        if(result.error)return reply(400,{error:body.action==='login'?'Unable to sign in. Check your details and confirm your email.':'Unable to create an account. Check your details or try signing in.'});
+        if(result.data.session){if(!validSession(result.data.session))throw new Error('Invalid provider session');const check=await base.auth.getUser(result.data.session.access_token);const u=check.data?.user;if(check.error||!u||typeof u.id!=='string'||!u.id||u.is_anonymous||(result.data.user?.id&&result.data.user.id!==u.id))throw new Error('Invalid provider session');sessionCookies(result.data.session);return reply(200,{user:{id:u.id,email:u.email},confirmationRequired:false});}
+        if(body.action==='login'||!result.data?.user||typeof result.data.user.id!=='string'||!result.data.user.id)throw new Error('Invalid provider session');
+        return reply(200,{user:null,confirmationRequired:true});
       }
       const user=await verified();
       if(!user)return reply(401,{error:'Sign in to access your saved workspace.'});
@@ -129,9 +111,14 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       if(resource==='agents'){
         const endpoint=config.url+'/functions/v1/pull-mcp';
         if(request.method==='GET'){
-          const result=await client(access).from('pull_agent_tokens').select('id,label,scopes,expires_at,created_at,revoked_at').eq('user_id',user.id).order('created_at.desc').all();
+          const result=await client(access).from('pull_agent_tokens').select('id,label,scopes,expires_at,created_at,revoked_at').eq('user_id',user.id).order('created_at',{ascending:false}).all();
           if(result.error)return reply(503,{error:'Agent access setup is unavailable.'});
           return reply(200,{configured:true,endpoint,tokens:(result.data||[]).filter(t=>!t.revoked_at&&new Date(t.expires_at)>now())});
+        }
+        if(body.action==='test'){
+          if(Object.keys(body).some(k=>!['action','token'].includes(k)))return reply(400,{error:'Use the fixed Pull connection check.'});
+          const {status,...result}=await testAgentConnection({endpoint,token:body.token,transport});
+          return reply(status,result);
         }
         if(body.action==='create'){
           if(typeof body.label!=='string'||!body.label.trim()||body.label.length>80||!Array.isArray(body.scopes)||!body.scopes.length||!body.scopes.every(s=>['workspace:read','drafts:write'].includes(s)))return reply(400,{error:'Name the agent and choose supported permissions.'});
@@ -148,6 +135,12 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
           return result.data?reply(200,{revoked:true}):reply(404,{error:'Access token not found.'});
         }
         return reply(400,{error:'Unknown agent access action.'});
+      }
+      if(resource==='profile'){
+        const db=client(access).from('pull_profiles');
+        if(request.method==='GET'){const r=await db.select('id,display_name,created_at,updated_at').eq('id',user.id).maybeSingle();if(r.error)return reply(503,{error:'Profile is unavailable. Try again shortly.'});return reply(200,{profile:r.data});}
+        if(Object.keys(body).some(k=>k!=='display_name')||typeof body.display_name!=='string'||body.display_name.trim().length>100||/[\u0000-\u001f\u007f]/.test(body.display_name))return reply(400,{error:'Use a display name of at most 100 characters.'});
+        const r=await db.update({display_name:body.display_name.trim()}).eq('id',user.id).select('id,display_name,created_at,updated_at').maybeSingle();if(r.error||!r.data)return reply(503,{error:'Could not save your profile. Try again shortly.'});return reply(200,{profile:r.data});
       }
       const db=client(access).from('pull_workspaces');
       if(request.method==='GET') {
@@ -166,5 +159,5 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       return reply(200,result.data);
     } catch {return reply(503,{error:'The cloud service is temporarily unavailable. Your local work is safe.'});}
   }
-  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents')};
+  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents')};
 }

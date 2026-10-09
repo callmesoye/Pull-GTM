@@ -9,7 +9,7 @@ const request=(path,body,{cookie='',origin='https://pull.example',method,account
 const sessionCookie=id=>'__Host-pull-access=valid-'+id+'; __Host-pull-refresh=refresh-'+id;
 const user=id=>({id,email:id+'@example.test',is_anonymous:false});
 
-function fixture({unavailable=false,anonymous=false,confirmSignup=false}={}) {
+function fixture({unavailable=false,anonymous=false,confirmSignup=false,authStatus=0,refreshStatus=0}={}) {
   const rows=new Map(),calls=[];
   const transport=async(input,options)=>{
     const u=new URL(input),body=options.body?JSON.parse(options.body):null;
@@ -17,8 +17,11 @@ function fixture({unavailable=false,anonymous=false,confirmSignup=false}={}) {
     if(unavailable)throw new Error('provider offline');
     const token=options.headers.Authorization?.replace('Bearer ','');
     const id=token?.startsWith('valid-')?token.slice(6):null;
+    if(u.pathname==='/auth/v1/user'&&authStatus)return Response.json({error_code:'over_request_rate_limit'},{status:authStatus});
     if(u.pathname==='/auth/v1/user')return id?Response.json({...user(id),is_anonymous:anonymous}):Response.json({},{status:401});
     if(u.pathname==='/auth/v1/token'){
+      if(body.refresh_token&&refreshStatus)return Response.json({error_code:'over_request_rate_limit'},{status:refreshStatus});
+      if(!body.refresh_token&&authStatus)return Response.json({error_code:'provider_unavailable'},{status:authStatus});
       const sessionId=body.refresh_token?.replace('refresh-','')||'A';
       return Response.json({access_token:'valid-'+sessionId,refresh_token:'refresh-'+sessionId,expires_in:3600,user:user(sessionId)});
     }
@@ -139,4 +142,33 @@ test('A provider outage still clears the browser session on explicit sign out',a
   const cookies=response.headers.getSetCookie();
   assert.equal(cookies.length,2);
   assert.ok(cookies.every(c=>c.includes('Max-Age=0')&&c.includes('HttpOnly')&&c.includes('Secure')));
+});
+
+
+test('Temporary authentication limits do not sign out the browser or reach its data',async()=>{
+  for(const options of [{authStatus:429},{refreshStatus:429},{refreshStatus:503}]){
+    const {backend,calls}=fixture(options);
+    const response=await backend.workspace(request('workspace',undefined,{cookie:'__Host-pull-access=expired; __Host-pull-refresh=refresh-A',accountId:'A'}));
+    assert.equal(response.status,503);assert.equal(response.headers.getSetCookie().length,0);
+    assert.ok(!calls.some(c=>c.url.includes('/rest/v1/')));
+  }
+});
+test('Provider outage and rate limits give honest login errors',async()=>{
+  for(const [authStatus,status] of [[503,503],[429,429]]){
+    const {backend}=fixture({authStatus});const response=await backend.session(request('session',{action:'login',email:'a@example.test',password:'12345678'}));
+    assert.equal(response.status,status);assert.equal(response.headers.getSetCookie().length,0);
+    assert.ok(!(await response.text()).includes('Check your details'));
+  }
+});
+test('Malformed backup values cannot become cloud work that crashes the interface',()=>{
+  for(const changes of [
+    {prospects:[{id:'1',name:{}}]},
+    {prospects:[{id:'1',name:'Person',conflicts:'title'}]},
+    {prospects:[{id:'constructor',name:'Person'}],shortlist:[]},
+    {setup:'false'}, {duplicates:-1},
+    {rules:{...payload().rules,min:'100',max:'10'}},
+    {rules:{...payload().rules,days:'invalid'}}
+  ])assert.throws(()=>validateWorkspace({...payload(),...changes}));
+  const original=payload(),validated=validateWorkspace(original);validated.prospects[0].name='Changed';
+  assert.equal(original.prospects[0].name,'Fictional Person');assert.equal(validated.remember,false);
 });

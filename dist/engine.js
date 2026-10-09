@@ -23,32 +23,33 @@ export function parseCSV(input) {
   if(rows.length<2)throw new Error('Add a header row and at least one prospect.');
   const headers=rows.shift().map(h=>norm(h).replace(/[\s-]+/g,'_'));
   if(new Set(headers).size!==headers.length)throw new Error('CSV contains duplicate column names.');
-  const aliases={full_name:'name',first_name:'first_name',job_title:'title',company_name:'company',company_size:'employees',linkedin_url:'profile_url',evidence_url:'source_url',intent_signal:'signal',date:'signal_date',do_not_contact:'suppressed'};
+  const aliases={full_name:'name',first_name:'first_name',last_name:'last_name',job_title:'title',position:'title',organization:'company',organisation:'company',company_name:'company',company_size:'employees',email_address:'email',linkedin_url:'profile_url',evidence_url:'source_url',intent_signal:'signal',date:'signal_date',do_not_contact:'suppressed'};
   const mapped=headers.map(h=>aliases[h]||h);
   if(new Set(mapped).size!==mapped.length)throw new Error('Two columns map to the same field. Keep one column for each field.');
-  if(!mapped.includes('name')&&!mapped.includes('company'))throw new Error('Include a name or company column. Download the template for supported fields.');
   return rows.map((values,index)=>{
     if(values.length!==headers.length)throw new Error('Row '+(index+2)+' has '+values.length+' values; expected '+headers.length+'.');
     const p=Object.fromEntries(mapped.map((h,i)=>[h,values[i]?.trim()||'']));
-    if(!p.name&&!p.company)throw new Error('Row '+(index+2)+' needs a name or company.');
+    if(!p.name&&(p.first_name||p.last_name))p.name=[p.first_name,p.last_name].filter(Boolean).join(' ');
     return {...p,id:'import-'+index,origin:'import',suppressed:['true','yes','1'].includes(norm(p.suppressed))};
   });
 }
 export function deduplicate(prospects) {
   const seen=new Map(),clean=[];let duplicates=0;
   for(const item of prospects) {
-    const key=norm(item.email)||norm(item.profile_url).replace(/\/$/,'')||norm(item.name)+'|'+norm(item.company);
+    const key=norm(item.email)||norm(item.profile_url).replace(/\/$/,'')||(norm(item.name)||norm(item.company)?norm(item.name)+'|'+norm(item.company):'row:'+item.id);
     if(seen.has(key)) {
       duplicates++;const previous=seen.get(key);
       previous.suppressed=previous.suppressed||item.suppressed;
       const conflicts=['title','company','industry','country','employees','signal','signal_date','source_url'].filter(k=>previous[k]&&item[k]&&norm(previous[k])!==norm(item[k]));
-      previous.conflicts=[...new Set([...(previous.conflicts||[]),...conflicts])];
+      previous.conflicts=[...new Set([...(previous.conflicts||[]),...(item.conflicts||[]),...conflicts])];
+      for(const [field,value] of Object.entries(item)){if(['id','origin','suppressed','conflicts'].includes(field))continue;if(!norm(previous[field])&&norm(value))previous[field]=value;}
     }else {const copy={...item};seen.set(key,copy);clean.push(copy);}
   }
   return {prospects:clean,duplicates};
 }
 export function qualify(p,rules,now=new Date()) {
   const checks=[],fail=[],missing=[];
+  if(![p.name,p.company,p.email,p.profile_url].some(norm))missing.push('Prospect identity is missing');
   const match=(label,value,options,mode='exact')=>{
     if(!options.length)return;
     if(!norm(value)){missing.push(label+' is missing');checks.push({label,state:'unknown',detail:'Not provided'});return;}

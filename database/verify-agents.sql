@@ -51,7 +51,9 @@ begin
     or has_function_privilege('anon','public.commit_pull_agent_draft(text,bigint,text,text,text,text)','EXECUTE') then
     raise exception 'A private helper or service-only RPC is accessible to a client role';
   end if;
-  if not has_function_privilege('service_role','public.authenticate_pull_agent(text)','EXECUTE')
+  if not has_schema_privilege('authenticated','pull_private','USAGE')
+    or not has_function_privilege('authenticated','pull_private.claim_ai_request()','EXECUTE')
+    or not has_function_privilege('service_role','public.authenticate_pull_agent(text)','EXECUTE')
     or not has_function_privilege('service_role','public.commit_pull_agent_draft(text,bigint,text,text,text,text)','EXECUTE')
     or not has_function_privilege('authenticated','public.claim_pull_ai_request()','EXECUTE') then
     raise exception 'Required server or authenticated RPC grant is missing';

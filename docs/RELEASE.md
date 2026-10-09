@@ -1,27 +1,28 @@
-# Pull GTM release status
+# Combined release status
 
-Updated 8 October 2026.
+Updated 9 October 2026.
 
-## Source and interface
+## Source
 
-The refined light interface includes grouped Today / Buyers / Engage / AI navigation, broad workspace search, secondary shortlist and conversation tabs, expandable audience controls, private cloud saves and scoped agent access. Sixty-three local tests pass. Build checks run before publication.
+The consolidated release belongs in the single private repository [callmesoye/Pull-GTM](https://github.com/callmesoye/Pull-GTM). It combines the light grouped workspace and AI mode with Settings, profile editing, Google sign-in support, Automations, improved CSV import, Connect your AI, and Support.
 
-GitHub repository: https://github.com/callmesoye/Pull-GTM. The complete source release is committed on main at c07e37e43e2044ad14728d1f23ec45f8a3cb53cb. Repository metadata confirms private visibility. No service credentials or customer data are committed.
+The current local suite passes all 129 tests. Connection tests cover late responses after navigation, account changes, duplicate key creation, unavailable metadata, and failed access checks. These tests use controlled fixtures and do not certify the production configuration.
 
-## Hosting
+## Existing targets
 
-Existing production URL: https://pull-gtm.vercel.app. It was visibly serving an older interface in Opera GX. Vercel project pull-gtm is in exclamation-studio, ID prj_yuXViw3hMBiA0Iljfot5Y6y6eJBT. Its Git settings showed no connected repository. Vercel currently lists the exclamationstudios-art GitHub namespace, while Pull-GTM belongs to callmesoye; connecting the intended repository requires that namespace access. The Vercel connector returned a scope authorization error, so the signed-in dashboard is the publishing fallback. A new production deployment is not yet verified.
+| Service | Target |
+| --- | --- |
+| GitHub | Private `callmesoye/Pull-GTM` |
+| Vercel | Existing `pull-gtm` project at [pull-gtm.vercel.app](https://pull-gtm.vercel.app) |
+| Supabase | Existing project `cyakphnpljeesotbjerz` |
+| MCP | [pull-mcp endpoint](https://cyakphnpljeesotbjerz.supabase.co/functions/v1/pull-mcp) |
 
-## Backend
+A successful deployment of this combined source has not yet been recorded here. Earlier database/function checks do not verify the newly combined release. Before marking it live, record its source commit, Vercel deployment URL, deployed database/function revisions, and the remote checks in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-Dedicated Supabase project cyakphnpljeesotbjerz in exclamation studio is active. Scoped token tables, authenticated AI quotas and service-only agent RPCs are applied. The pull-mcp Edge Function is ACTIVE, version 1, with custom token authentication. No sending or prospect discovery provider is connected.
+## Availability
 
-Remote transaction-only assertions passed for account isolation, anonymous rejection, hidden token hashes, helper/RPC access, token expiry, revocation, active-token limits, user/project AI quotas, unsent drafts and stale-revision protection. All fixtures and usage-counter changes were rolled back. A real external MCP client request and production browser save/restore remain unverified.
+Claude Code, Cursor, and Codex have bearer-header setup paths. Claude web is conditional on access to its Request headers beta. ChatGPT setup remains pending a compatible MCP OAuth implementation. Google sign-in to Pull is separate from MCP OAuth and does not resolve that gap. See [MCP-SETUP.md](MCP-SETUP.md).
 
-Security advisors report an informational notice for the private quota table's intentionally denying RLS policy state, plus leaked-password protection being disabled. Supabase documents that leaked-password protection requires Pro or above; this project remains on the owner-approved free plan. No paid upgrade was made. See https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection.
+Cloud sign-in/save/restore, Google sign-in, model responses, workflow execution, and an external MCP client still require verification on the intended deployment before they are described as remotely tested. Sending, reply sync, and live discovery remain unavailable.
 
-The local login route reached real Supabase and rejected nonexistent credentials correctly. Successful end-user sign-in, cloud save and restore across the production UI still require verification. Supabase email confirmation remains enabled; configure a production sender before broad registration.
-
-AI mode makes actual gateway calls only when configured; it returns honest setup or provider errors otherwise. No live model response is claimed in this release note.
-
-The Vercel repository connection is awaiting approval for access to callmesoye/Pull-GTM only. Automatic approval review rejected opening the connection because the new access scope was unconfirmed. The existing live URL still serves the prior interface until that connection and a successful deployment are verified.
+Support links use [gbosheabisoye.ag@gmail.com](mailto:gbosheabisoye.ag@gmail.com) and the owner’s [booking calendar](https://calendar.app.google/rhwGJ6n3zaRy5tdr8).

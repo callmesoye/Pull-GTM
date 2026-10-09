@@ -28,14 +28,20 @@ export function createClient(url,key,options={}) {
       const query={
         select:fields=>{params.set('select',fields);return query;},
         eq:(field,value)=>{params.set(field,'eq.'+value);return query;},
-        order:field=>{params.set('order',field);return query;},
-        all:async()=>request('/rest/v1/'+encodeURIComponent(table)+'?'+params,{method,body,prefer:method==='GET'?undefined:'return=representation'}),
+        order:(field,{ascending=true}={})=>{params.set('order',field+(ascending?'.asc':'.desc'));return query;},
+        limit:count=>{params.set('limit',String(count));return query;},
         insert:value=>{method='POST';body=value;return query;},
         update:value=>{method='PATCH';body=value;return query;},
-        maybeSingle:async()=>{
+        all:async()=>{
           const r=await request('/rest/v1/'+encodeURIComponent(table)+'?'+params,{method,body,prefer:method==='GET'?undefined:'return=representation'});
           if(r.error)return r;
-          if(!Array.isArray(r.data)||r.data.length>1)return {data:null,error:{status:502}};
+          if(!Array.isArray(r.data))return {data:null,error:{status:502}};
+          return r;
+        },
+        maybeSingle:async()=>{
+          const r=await query.all();
+          if(r.error)return r;
+          if(r.data.length>1)return {data:null,error:{status:502}};
           return {data:r.data[0]||null,error:null};
         },
         single:async()=>query.maybeSingle()
