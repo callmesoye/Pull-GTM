@@ -72,6 +72,17 @@ test('Repeated suggestion runs preserve custom subject, body, channel and prepar
   const result=applyAutomation(workflow(WD,A,'draft_suggestions'),original,new Date(at));assert.deepEqual(result.payload.drafts.p1,custom);assert.equal(result.counts.drafts_created,0);assert.equal(result.counts.existing_drafts,1);
 });
 
+test('Social workflows create channel-specific drafts and never send a message',()=>{
+  const expected={linkedin:'personal',x:'x',instagram:'instagram',facebook:'facebook'};
+  for(const [destination,channel] of Object.entries(expected)){
+    const result=applyAutomation({...workflow(WD,A,'draft_suggestions'),destination},workspace(),new Date(at));
+    assert.equal(result.payload.drafts.p1.channel,channel);
+    assert.equal(result.payload.drafts.p1.ready,false);
+    assert.equal(result.counts.drafts_created,1);
+    assert.match(result.payload.audit[0].detail,/Nothing sent/);
+  }
+});
+
 test('Unconfigured deployments, anonymous visitors and stale account headers cannot run or read private workflows',async()=>{
   const noConfig=createAutomationsBackend({env:{}});assert.deepEqual(await(await noConfig(request())).json(),{configured:false,workflows:[],runs:[]});assert.equal((await noConfig(request({action:'run',id:WA,revision:1}))).status,503);
   for(const [options,req,status] of [[{},request(undefined,{user:null}),401],[{anonymous:true},request(),401],[{},request(undefined,{account:B}),409]]){

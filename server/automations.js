@@ -45,7 +45,8 @@ export function applyAutomation(workflow,workspace,at=new Date()) {
     for (const p of evaluated.filter(p=>reviewed.has(p.id))) {
       if (p.status!=='fit' || p.suppressed) { counts.not_eligible++; continue; }
       if (Object.hasOwn(payload.drafts,p.id)) { counts.existing_drafts++; continue; }
-      payload.drafts[p.id]={body:draftFor(p,payload.offer,payload.identity),subject:'A question for '+(p.company||p.name||'your team'),channel:'email',ready:false};
+      const channel={linkedin:'personal',x:'x',instagram:'instagram',facebook:'facebook'}[workflow.destination]||'email';
+      payload.drafts[p.id]={body:draftFor(p,payload.offer,payload.identity),subject:'A question for '+(p.company||p.name||'your team'),channel,ready:false};
       counts.drafts_created++;
     }
   }

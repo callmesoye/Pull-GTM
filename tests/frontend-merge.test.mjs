@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import * as engine from '../dist/engine.js';
+import {contactOptions,displayIdentity,validContactUrl} from '../dist/contact.js';
 import {samples} from '../dist/sample.js';
 import {renderSimpleHome} from '../dist/simple-home.js';
 import {buildAgentPrompt,renderAgentAIView} from '../dist/agent-ai.js';
@@ -21,7 +22,7 @@ async function workspace() {
   };
   const document={body:{dataset:{}},querySelector:element,querySelectorAll:()=>[],addEventListener(name,fn){events.set(name,[...(events.get(name)||[]),fn]);}};
   const location={hash:'',protocol:'https:',pathname:'/',search:''};
-  const context={...engine,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
+  const context={...engine,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
   vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,visibleRows,guideItems,render,aiContext,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData}),update:changes=>{if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
   return {app:context.testApp,element,location,calls,hash:()=>windowEvents.get('hashchange')(),click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
@@ -49,15 +50,33 @@ test('Settings deep links survive navigation from another page',async()=>{
   assert.equal(location.hash,'#settings/security');
 });
 
-test('CSV import keeps optional-company and incomplete rows visible in All',async()=>{
+test('CSV import rejects unnamed rows without replacing the current list',async()=>{
   const {app,element,import:importCSV}=await workspace();
   await importCSV('First Name,Last Name,Email Address,Company Name,Job Title\nAda,Lovelace,ada@example.test,,CEO\n,,other@example.test,,Founder\n,,,,CEO');
-  assert.equal(app.get().tab,'all');
-  assert.equal(app.get().state.prospects.length,3);
-  assert.equal(app.visibleRows().length,3);
-  assert.match(element('#view-content').innerHTML,/Ada Lovelace/);
-  assert.match(element('#view-content').innerHTML,/other@example.test/);
-  assert.match(element('#view-content').innerHTML,/Unnamed prospect/);
+  assert.equal(app.get().state.prospects.length,0);
+  assert.match(element('#dialog-content').innerHTML,/Row 4 has no person, company, email, or profile link/);
+});
+
+test('review shows supplied contact paths for a real record and never claims a message was sent',async()=>{
+  const {app,element,click}=await workspace();
+  app.update({state:{prospects:[{id:'ada',name:'Ada Okafor',company:'Green Acre',profile_url:'https://www.linkedin.com/in/ada-okafor/',email:'ada@example.test',origin:'import',suppressed:false}],mode:'import'}});
+  await click({prospect:'ada'});
+  const review=element('#dialog-content').innerHTML;
+  assert.match(review,/Ada Okafor/);
+  assert.match(review,/Open LinkedIn profile/);
+  assert.match(review,/Write email/);
+  assert.match(review,/Pull has not sent anything/);
+});
+
+test('a discovered person has a review form for adding checked contact links',async()=>{
+  const {app,element,click}=await workspace();
+  app.update({state:{prospects:[{id:'source-ada',name:'Ada Okafor',title:'Founder',company:'Green Acre',source_url:'https://greenacre.example/team/ada',origin:'discovery',private_verified:'no',suppressed:false}],mode:'import'}});
+  await click({prospect:'source-ada'});
+  const review=element('#dialog-content').innerHTML;
+  const sourceForm=element('#dialog-content .dialog-body').innerHTML;
+  assert.match(sourceForm,/Add a contact path you checked/);
+  assert.match(sourceForm,/name="x_url"/);
+  assert.match(review,/No usable contact link is recorded yet/);
 });
 
 test('See all prospects clears both status and search filters',async()=>{
@@ -93,6 +112,28 @@ test('Switching accounts clears AI messages, tokens, profiles and workflows',asy
   assert.equal(next.automationData.workflows.length,0);
   assert.equal(next.profile,null);
   assert.ok(calls.includes('account:B'),'Connect receives the new account, not stale account state');
+});
+
+test('Account avatar and workspace identity are separate controls',async()=>{
+  const {app,element,click}=await workspace();
+  app.setCloudUser({id:'A',email:'ada@example.test',avatar_url:'https://lh3.googleusercontent.com/photo'});
+  assert.match(element('#account-button').innerHTML,/account-avatar/);
+  assert.match(element('#account-button').innerHTML,/googleusercontent/);
+  await click({action:'switch-identity'});
+  assert.match(element('#dialog-content').innerHTML,/does not connect a social account/);
+  await click({action:'identity-personal'});
+  assert.equal(app.get().state.context,'personal');
+  assert.match(element('#workspace-context').textContent,/Personal workspace/);
+});
+
+test('A channel draft opens only the supplied social profile for manual handoff',async()=>{
+  const {app,element}=await workspace();
+  app.update({state:{mode:'import',prospects:[{id:'ada',name:'Ada Okafor',company:'Green Acre',origin:'import',x_url:'https://x.com/ada'}],shortlist:['ada'],drafts:{ada:{body:'Hello Ada',subject:'Hello',channel:'x',ready:false}}}});
+  app.navigate('drafts');
+  const html=element('#view-content').innerHTML;
+  assert.match(html,/X · manual handoff/);
+  assert.match(html,/href="https:\/\/x.com\/ada"/);
+  assert.match(html,/Pull does not send automated social messages/);
 });
 
 test('Email-only identities remain searchable and produce valid saved audit records',async()=>{

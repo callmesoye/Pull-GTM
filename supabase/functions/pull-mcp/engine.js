@@ -1,7 +1,13 @@
 export const norm = value => String(value ?? '').normalize('NFKC').trim().toLowerCase();
 export const terms = value => String(value ?? '').split(',').map(norm).filter(Boolean);
+export const hasIdentity = prospect => [prospect?.name,prospect?.company,prospect?.email].some(norm)||Boolean(safePrivateProfileUrl(prospect?.profile_url));
 export function safeUrl(value) {
   try {const u=new URL(String(value));return ['https:','http:'].includes(u.protocol)&&!u.username&&!u.password?u.href:'';}catch{return '';}
+}
+export function safePrivateProfileUrl(value){
+  const url=safeUrl(value);if(!url||!url.startsWith('https://'))return '';
+  const host=new URL(url).hostname;
+  return /\.(gov|mil|edu)(\.|$)/i.test(host)||/(^|\.)(gov|gouv|gc|go|edu|ac|mil)\.[a-z.]+$/i.test(host)?'':url;
 }
 export function parseCSV(input) {
   const text=String(input).replace(/^\uFEFF/,'');
@@ -23,13 +29,14 @@ export function parseCSV(input) {
   if(rows.length<2)throw new Error('Add a header row and at least one prospect.');
   const headers=rows.shift().map(h=>norm(h).replace(/[\s-]+/g,'_'));
   if(new Set(headers).size!==headers.length)throw new Error('CSV contains duplicate column names.');
-  const aliases={full_name:'name',first_name:'first_name',last_name:'last_name',job_title:'title',position:'title',organization:'company',organisation:'company',company_name:'company',company_size:'employees',email_address:'email',linkedin_url:'profile_url',evidence_url:'source_url',intent_signal:'signal',date:'signal_date',do_not_contact:'suppressed'};
+  const aliases={full_name:'name',first_name:'first_name',last_name:'last_name',job_title:'title',position:'title',organization:'company',organisation:'company',company_name:'company',company_size:'employees',email_address:'email',linkedin_url:'profile_url',twitter_url:'x_url',evidence_url:'source_url',intent_signal:'signal',date:'signal_date',do_not_contact:'suppressed'};
   const mapped=headers.map(h=>aliases[h]||h);
   if(new Set(mapped).size!==mapped.length)throw new Error('Two columns map to the same field. Keep one column for each field.');
   return rows.map((values,index)=>{
     if(values.length!==headers.length)throw new Error('Row '+(index+2)+' has '+values.length+' values; expected '+headers.length+'.');
     const p=Object.fromEntries(mapped.map((h,i)=>[h,values[i]?.trim()||'']));
     if(!p.name&&(p.first_name||p.last_name))p.name=[p.first_name,p.last_name].filter(Boolean).join(' ');
+    if(!hasIdentity(p))throw new Error('Row '+(index+2)+' has no person, company, email, or profile link. Add an identity before importing.');
     return {...p,id:'import-'+index,origin:'import',suppressed:['true','yes','1'].includes(norm(p.suppressed))};
   });
 }
@@ -49,7 +56,7 @@ export function deduplicate(prospects) {
 }
 export function qualify(p,rules,now=new Date()) {
   const checks=[],fail=[],missing=[];
-  if(![p.name,p.company,p.email,p.profile_url].some(norm))missing.push('Prospect identity is missing');
+  if(!hasIdentity(p))missing.push('Prospect identity is missing');
   if(p.origin==='discovery'&&p.private_verified!=='yes')missing.push('Confirm this is a current private-sector person and business');
   const match=(label,value,options,mode='exact')=>{
     if(!options.length)return;

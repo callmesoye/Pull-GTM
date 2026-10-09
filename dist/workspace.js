@@ -19,7 +19,7 @@ export function validateWorkspace(value) {
   }
   if (!value.shortlist.every(id => typeof id === 'string' && ids.has(id)) || !Object.keys(value.drafts).every(id => ids.has(id))) throw new Error('Workspace contains unknown prospect references.');
   if (new Set(value.shortlist).size !== value.shortlist.length) throw new Error('Shortlist contains duplicate references.');
-  if (!Object.values(value.drafts).every(d => object(d) && typeof d.body === 'string' && typeof d.subject === 'string' && ['email','personal','company'].includes(d.channel) && typeof d.ready === 'boolean')) throw new Error('Invalid outreach draft.');
+  if (!Object.values(value.drafts).every(d => object(d) && typeof d.body === 'string' && typeof d.subject === 'string' && ['email','personal','company','x','instagram','facebook'].includes(d.channel) && typeof d.ready === 'boolean')) throw new Error('Invalid outreach draft.');
   if (!value.audit.every(a => object(a) && typeof a.action === 'string' && typeof a.detail === 'string' && typeof a.at === 'string' && Number.isFinite(Date.parse(a.at)) && (a.mode === undefined || modes.includes(a.mode)))) throw new Error('Invalid activity record.');
   if (!['roles','industries','countries','min','max','signals','days'].every(k => typeof value.rules[k] === 'string') || typeof value.rules.evidence !== 'boolean') throw new Error('Invalid audience criteria.');
   const r = value.rules;

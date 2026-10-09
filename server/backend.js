@@ -7,6 +7,14 @@ const MAX_BYTES = 3 * 1024 * 1024;
 import {validateWorkspace} from '../dist/workspace.js';
 export {validateWorkspace} from '../dist/workspace.js';
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+function publicUser(user) {
+  const result={id:user.id,email:user.email};
+  const raw=user.app_metadata?.provider==='google' ? user.user_metadata?.avatar_url || user.user_metadata?.picture : null;
+  if(typeof raw==='string'&&raw.length<512){
+    try {const url=new URL(raw);if(url.protocol==='https:'&&/^([a-z0-9-]+\.)*googleusercontent\.com$/i.test(url.hostname)&&!url.username&&!url.password)result.avatar_url=url.href;} catch {}
+  }
+  return result;
+}
 
 import {configuration} from './config.js';
 export {configuration} from './config.js';
@@ -76,7 +84,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
     };
     try {
       if(resource==='session') {
-        if(request.method==='GET') {const user=await verified();return reply(200,{configured:true,providers:{google:Boolean(googleConfiguration(env))},user:user?{id:user.id,email:user.email}:null});}
+        if(request.method==='GET') {const user=await verified();return reply(200,{configured:true,providers:{google:Boolean(googleConfiguration(env))},user:user?publicUser(user):null});}
         if(body.action==='logout') {
           let revocationConfirmed=true;
           try{
@@ -95,7 +103,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
         if(result.error?.status>=500)throw new Error('Provider unavailable');
         if(result.error?.status===429)return reply(429,{error:'Too many account attempts. Wait a moment, then try again.'});
         if(result.error)return reply(400,{error:body.action==='login'?'Unable to sign in. Check your details and confirm your email.':'Unable to create an account. Check your details or try signing in.'});
-        if(result.data.session){if(!validSession(result.data.session))throw new Error('Invalid provider session');const check=await base.auth.getUser(result.data.session.access_token);const u=check.data?.user;if(check.error||!u||typeof u.id!=='string'||!u.id||u.is_anonymous||(result.data.user?.id&&result.data.user.id!==u.id))throw new Error('Invalid provider session');sessionCookies(result.data.session);return reply(200,{user:{id:u.id,email:u.email},confirmationRequired:false});}
+        if(result.data.session){if(!validSession(result.data.session))throw new Error('Invalid provider session');const check=await base.auth.getUser(result.data.session.access_token);const u=check.data?.user;if(check.error||!u||typeof u.id!=='string'||!u.id||u.is_anonymous||(result.data.user?.id&&result.data.user.id!==u.id))throw new Error('Invalid provider session');sessionCookies(result.data.session);return reply(200,{user:publicUser(u),confirmationRequired:false});}
         if(body.action==='login'||!result.data?.user||typeof result.data.user.id!=='string'||!result.data.user.id)throw new Error('Invalid provider session');
         return reply(200,{user:null,confirmationRequired:true});
       }

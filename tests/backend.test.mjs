@@ -9,7 +9,7 @@ const request=(path,body,{cookie='',origin='https://pull.example',method,account
 const sessionCookie=id=>'__Host-pull-access=valid-'+id+'; __Host-pull-refresh=refresh-'+id;
 const user=id=>({id,email:id+'@example.test',is_anonymous:false});
 
-function fixture({unavailable=false,anonymous=false,confirmSignup=false,authStatus=0,refreshStatus=0}={}) {
+function fixture({unavailable=false,anonymous=false,confirmSignup=false,authStatus=0,refreshStatus=0,authMetadata={}}={}) {
   const rows=new Map(),calls=[];
   const transport=async(input,options)=>{
     const u=new URL(input),body=options.body?JSON.parse(options.body):null;
@@ -18,7 +18,7 @@ function fixture({unavailable=false,anonymous=false,confirmSignup=false,authStat
     const token=options.headers.Authorization?.replace('Bearer ','');
     const id=token?.startsWith('valid-')?token.slice(6):null;
     if(u.pathname==='/auth/v1/user'&&authStatus)return Response.json({error_code:'over_request_rate_limit'},{status:authStatus});
-    if(u.pathname==='/auth/v1/user')return id?Response.json({...user(id),is_anonymous:anonymous}):Response.json({},{status:401});
+    if(u.pathname==='/auth/v1/user')return id?Response.json({...user(id),is_anonymous:anonymous,...authMetadata}):Response.json({},{status:401});
     if(u.pathname==='/auth/v1/token'){
       if(body.refresh_token&&refreshStatus)return Response.json({error_code:'over_request_rate_limit'},{status:refreshStatus});
       if(!body.refresh_token&&authStatus)return Response.json({error_code:'provider_unavailable'},{status:authStatus});
@@ -66,6 +66,18 @@ test('Anonymous and unauthenticated visitors cannot read saved workspaces',async
 test('Login stores HttpOnly secure cookies without returning tokens to JavaScript',async()=>{
   const {backend}=fixture();const r=await backend.session(request('session',{action:'login',email:'a@example.test',password:'12345678'}));assert.equal(r.status,200);
   const body=await r.text();assert.ok(!body.includes('valid-A'));assert.ok(!body.includes('refresh-A'));const cookies=r.headers.getSetCookie();assert.equal(cookies.length,2);for(const c of cookies){assert.ok(c.includes('HttpOnly'));assert.ok(c.includes('Secure'));assert.ok(c.includes('SameSite=Lax'));assert.ok(c.startsWith('__Host-pull-'));}
+});
+test('Account avatar is returned only from a verified Google identity and trusted image host',async()=>{
+  const good=fixture({authMetadata:{app_metadata:{provider:'google'},user_metadata:{avatar_url:'https://lh3.googleusercontent.com/photo'}}});
+  assert.equal((await(await good.backend.session(request('session',undefined,{cookie:sessionCookie('A')}))).json()).user.avatar_url,'https://lh3.googleusercontent.com/photo');
+  for(const authMetadata of [
+    {app_metadata:{provider:'email'},user_metadata:{avatar_url:'https://lh3.googleusercontent.com/photo'}},
+    {app_metadata:{provider:'google'},user_metadata:{avatar_url:'https://evil.example/photo'}},
+    {app_metadata:{provider:'google'},user_metadata:{avatar_url:'https://googleusercontent.com.evil.example/photo'}}
+  ]){
+    const item=fixture({authMetadata});
+    assert.equal((await(await item.backend.session(request('session',undefined,{cookie:sessionCookie('A')}))).json()).user.avatar_url,undefined);
+  }
 });
 test('Email confirmation is reported without creating a signed-in session',async()=>{
   const {backend}=fixture({confirmSignup:true});const r=await backend.session(request('session',{action:'signup',email:'a@example.test',password:'12345678'}));assert.deepEqual(await r.json(),{user:null,confirmationRequired:true});assert.equal(r.headers.getSetCookie().length,0);

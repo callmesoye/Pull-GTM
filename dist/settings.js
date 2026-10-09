@@ -69,7 +69,7 @@ export function renderSettingsView({ state, cloud = {}, profile, profileLoading 
         <div class="settings-card settings-provider-list">
           <div class="settings-provider-row"><div><h3>Your AI assistant</h3><p>Connect your preferred AI app to your private Pull workspace with a guided setup.</p></div><button class="button secondary small" data-view="connect">Connect your AI</button></div>
           <div class="settings-provider-row"><div><h3>Prospect import</h3><p>Import a CSV list you own. Sources, dates, and unknown information stay with each record.</p></div><div class="settings-provider-actions"><span class="badge fit">Available</span><button class="button secondary small" data-action="import">Import a list</button></div></div>
-          <div class="settings-provider-row"><div><h3>Channel setup</h3><p>Review the supported actions and requirements for each channel.</p></div><button class="button secondary small" data-view="connections">Open connections</button></div>
+          <div class="settings-provider-row"><div><h3>Social accounts</h3><p>X, LinkedIn, Facebook, and Instagram are not connected. Pull never asks for a social password. Future connections must use each platform’s official authorization and show exactly what is permitted before any action.</p></div><div class="settings-provider-actions"><span class="badge review">Not connected</span><button class="button secondary small" data-view="connections">View channels</button></div></div>
         </div>
       </section>
       <section id="settings/data" class="settings-section" tabindex="-1" aria-labelledby="settings-data-title">
