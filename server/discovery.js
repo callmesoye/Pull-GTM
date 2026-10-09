@@ -28,7 +28,8 @@ export async function discoverPrivatePages(input,{key,transport=fetch}={}) {
   if(!key)return {configured:false,candidates:[],notice:'Live source search needs a search-provider key. Your imported list and local audience review still work.'};
   const queries=[
     [input.audience,input.industry,input.location,input.source,'private business'].filter(Boolean).join(' '),
-    [input.audience,input.industry,input.location,'private company'].filter(Boolean).join(' ')
+    [input.audience,input.industry,input.location,'private company'].filter(Boolean).join(' '),
+    [input.industry,input.location,input.audience,'independent business'].filter(Boolean).join(' ')
   ];
   const seen=new Set(),candidates=[];
   for(const q of queries) {

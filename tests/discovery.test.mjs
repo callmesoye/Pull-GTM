@@ -18,7 +18,7 @@ test('source search returns only live source candidates, with no invented people
   let count=0;
   const transport=async()=>{count++;return new Response(JSON.stringify({web:{results:[{title:'Private car dealership',url:'https://dealer.example.com/cars',description:'Used cars in Lagos'},{title:'Federal agency',url:'https://agency.gov.ng',description:'Vehicle registry'}]}}),{status:200});};
   const result=await discoverPrivatePages(discoveryInput({audience:'Car buyers',industry:'Used cars',location:'Lagos',limit:30}),{key:'test',transport});
-  assert.equal(count,2);
+  assert.equal(count,3);
   assert.equal(result.candidates.length,1);
   assert.match(result.notice,/not verified customers/i);
   assert.equal(result.candidates[0].url,'https://dealer.example.com/cars');
