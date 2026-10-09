@@ -180,3 +180,5 @@ body:has(.settings-view) .page-heading, body:has(.settings-view) #local-notice {
 @media(max-width:900px){.sidebar-utilities{overflow-x:auto;white-space:nowrap;max-width:100%;gap:7px}.mobile-settings{display:flex}.sidebar-utilities .nav-item{flex-shrink:0}.sidebar .profile{display:none}.settings-index{top:86px}}
 @media(max-width:760px){.settings-view{--settings-offset:218px}.settings-index{top:78px}.home-next,.home-overview{padding:23px}.home-brief>div{flex-basis:100%}.home-next-actions{align-items:flex-start}.settings-provider-actions .badge{text-align:left}}
 @media(max-width:650px){.settings-index{top:71px}.settings-view{--settings-offset:210px}.sidebar-utilities .nav-item{min-height:40px}}
+
+.work-grid.discovery-first{grid-template-columns:minmax(0,1fr)}.discovery-first .discovery-form{grid-template-columns:repeat(2,minmax(0,1fr))}.discovery-first .discovery-panel .panel-head{padding:28px 30px}.discovery-first .discovery-panel .panel-head h2{font-size:1.35rem}.discovery-first .discovery-form{padding:25px 30px}.discovery-first .discovery-results{padding:0 30px 25px}@media(max-width:700px){.discovery-first .discovery-form{grid-template-columns:1fr}}
