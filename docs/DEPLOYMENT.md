@@ -21,7 +21,7 @@ Keep actual credentials in environment settings or an ignored local `.env`. Do n
 
 ## Existing Supabase project
 
-Review which migrations are already applied. Apply missing updates in dependency order: `database/setup.sql`, `database/agents.sql`, `database/account-registry.sql`, `database/automations.sql`, then `database/harden-automatic-rls.sql`. The profile registry and automations schema are needed by the newly merged screens. Review the complete SQL before applying it to the existing project.
+Review which migrations are already applied. Apply missing updates in dependency order: `database/setup.sql`, `database/agents.sql`, `database/account-registry.sql`, `database/automations.sql`, `database/automation-destinations.sql`, then `database/harden-automatic-rls.sql`. The profile registry and automations schema are needed by the newly merged screens. Review the complete SQL before applying it to the existing project.
 
 Run the supplied `database/verify.sql`, `database/verify-agents.sql`, and `database/verify-automations-rollback.sql` as appropriate. The latter two use transaction fixtures and roll back. Record results from the actual project separately from local tests.
 

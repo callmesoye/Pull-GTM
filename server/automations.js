@@ -2,11 +2,12 @@ import {configuration} from './config.js';
 import {createClient} from './supabase-rest.js';
 import {qualify,draftFor} from '../dist/engine.js';
 import {validateWorkspace} from '../dist/workspace.js';
+import {destinationIds} from '../dist/platforms.js';
 
 const KINDS = ['audience_review','draft_suggestions'];
 const TRIGGERS = ['manual','on_import'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const WORKFLOW_FIELDS = 'id,name,kind,trigger,enabled,archived,created_at,updated_at';
+const WORKFLOW_FIELDS = 'id,name,kind,trigger,destination,enabled,archived,created_at,updated_at';
 const RUN_FIELDS = 'id,automation_id,name,kind,status,counts,base_revision,result_revision,created_at';
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v);
 const validSession = s => object(s) && ['access_token','refresh_token'].every(k=>typeof s[k]==='string'&&s[k]&&encodeURIComponent(s[k]).length<=3800) && Number.isSafeInteger(s.expires_in) && s.expires_in>0;
@@ -14,28 +15,30 @@ const unavailable = () => Object.assign(new Error('Automations are temporarily u
 
 function definition(value,partial=false) {
   if (!object(value)) throw new Error('Choose a valid workflow.');
-  const fields = ['name','kind','trigger','enabled',...(partial?['archived']:[])];
+  const fields = ['name','kind','trigger','destination','enabled',...(partial?['archived']:[])];
   if (Object.keys(value).some(k=>!fields.includes(k))) throw new Error('Unsupported workflow setting.');
   if ((!partial || Object.hasOwn(value,'name')) && (typeof value.name !== 'string' || !value.name.trim() || value.name.trim().length > 100)) throw new Error('Give the workflow a name of 1 to 100 characters.');
   if ((!partial || Object.hasOwn(value,'kind')) && !KINDS.includes(value.kind)) throw new Error('Choose audience review or draft suggestions.');
   if ((!partial || Object.hasOwn(value,'trigger')) && !TRIGGERS.includes(value.trigger)) throw new Error('Choose a manual or after-import trigger.');
+  if (Object.hasOwn(value,'destination') && !destinationIds.includes(value.destination)) throw new Error('Choose a supported destination.');
   if (Object.hasOwn(value,'enabled') && typeof value.enabled !== 'boolean') throw new Error('Choose whether the workflow is enabled.');
   if (Object.hasOwn(value,'archived') && typeof value.archived !== 'boolean') throw new Error('Choose whether the workflow is archived.');
   const out = {...value}; if (out.name) out.name=out.name.trim();
   if (!partial && !Object.hasOwn(out,'enabled')) out.enabled=true;
+  if (!partial && !Object.hasOwn(out,'destination')) out.destination='none';
   if (out.archived) out.enabled=false;
   return out;
 }
 
 function validWorkflow(row) {
-  return object(row) && UUID.test(row.id) && typeof row.name==='string' && row.name.length<=100 && KINDS.includes(row.kind) && TRIGGERS.includes(row.trigger) && typeof row.enabled==='boolean' && typeof row.archived==='boolean' && typeof row.updated_at==='string' && Number.isFinite(Date.parse(row.updated_at));
+  return object(row) && UUID.test(row.id) && typeof row.name==='string' && row.name.length<=100 && KINDS.includes(row.kind) && TRIGGERS.includes(row.trigger) && destinationIds.includes(row.destination??'none') && typeof row.enabled==='boolean' && typeof row.archived==='boolean' && typeof row.updated_at==='string' && Number.isFinite(Date.parse(row.updated_at));
 }
 
 export function applyAutomation(workflow,workspace,at=new Date()) {
   const payload=validateWorkspace(workspace);
   if (!KINDS.includes(workflow.kind)) throw new Error('Unknown automation operation.');
   const evaluated=payload.prospects.map(p=>qualify(p,payload.rules,at));
-  const counts={prospects:evaluated.length,matches:0,needs_evidence:0,excluded:0,drafts_created:0,existing_drafts:0,not_eligible:0};
+  const counts={prospects:evaluated.length,matches:0,needs_evidence:0,excluded:0,drafts_created:0,existing_drafts:0,not_eligible:0,destination:workflow.destination??'none'};
   for (const p of evaluated) counts[{fit:'matches',review:'needs_evidence',excluded:'excluded'}[p.status]]++;
   if (workflow.kind==='draft_suggestions') {
     const reviewed=new Set(payload.shortlist);

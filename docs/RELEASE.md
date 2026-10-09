@@ -6,7 +6,7 @@ Updated 9 October 2026.
 
 The consolidated release belongs in the single private repository [callmesoye/Pull-GTM](https://github.com/callmesoye/Pull-GTM). It combines the light grouped workspace and AI mode with Settings, profile editing, Google sign-in support, Automations, improved CSV import, Connect your AI, and Support.
 
-The current local suite passes all 129 tests. Connection tests cover late responses after navigation, account changes, duplicate key creation, unavailable metadata, and failed access checks. These tests use controlled fixtures and do not certify the production configuration.
+The current local suite passes all 130 tests. Connection tests cover late responses after navigation, account changes, duplicate key creation, unavailable metadata, and failed access checks. These tests use controlled fixtures and do not certify the production configuration.
 
 ## Existing targets
 
@@ -24,5 +24,7 @@ A successful deployment of this combined source has not yet been recorded here. 
 Claude Code, Cursor, and Codex have bearer-header setup paths. Claude web is conditional on access to its Request headers beta. ChatGPT setup remains pending a compatible MCP OAuth implementation. Google sign-in to Pull is separate from MCP OAuth and does not resolve that gap. See [MCP-SETUP.md](MCP-SETUP.md).
 
 Cloud sign-in/save/restore, Google sign-in, model responses, workflow execution, and an external MCP client still require verification on the intended deployment before they are described as remotely tested. Sending, reply sync, and live discovery remain unavailable.
+
+The business, trade and career workspace and platform handoff choices are included in the source. Platform selection does not connect or send. Stripe billing and an owner admin console are not yet implemented. See [PLATFORM-AUTOMATION.md](PLATFORM-AUTOMATION.md).
 
 Support links use [gbosheabisoye.ag@gmail.com](mailto:gbosheabisoye.ag@gmail.com) and the owner’s [booking calendar](https://calendar.app.google/rhwGJ6n3zaRy5tdr8).

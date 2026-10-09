@@ -93,6 +93,19 @@ test('Create and update validate fixed operations and cannot reassign ownership'
   assert.equal((await f.backend(request({action:'update',id:WA,archived:true}))).status,200);assert.equal(f.workflows.get(WA).archived,true);assert.equal(f.workflows.get(WA).enabled,false);
 });
 
+test('Destination choices are saved as handoffs and never enable sending',async()=>{
+  const f=fixture();
+  const response=await f.backend(request({action:'create',name:'Car buyer review',kind:'audience_review',trigger:'manual',destination:'jiji'}));
+  assert.equal(response.status,201);
+  const created=(await response.json()).workflow;
+  assert.equal(created.destination,'jiji');
+  assert.equal(f.workflows.get(created.id).destination,'jiji');
+  assert.equal((await f.backend(request({action:'create',name:'Bad channel',kind:'audience_review',trigger:'manual',destination:'bulk_dm'}))).status,400);
+  const html=renderAutomationView({configured:true,signedIn:true,workflows:[created],runs:[]});
+  assert.match(html,/Jiji/);
+  assert.match(html,/posting and messages stay in your Jiji account/i);
+});
+
 test('Run reads only the saved workspace and atomically records its revision and history',async()=>{
   const f=fixture(),response=await f.backend(request({action:'run',id:WD,revision:1}));assert.equal(response.status,200);const result=await response.json();
   assert.equal(result.workspace.revision,2);assert.equal(result.results[0].counts.drafts_created,1);assert.equal(f.rows.get(A).revision,2);assert.equal(f.rows.get(B).revision,1);assert.equal(f.runs.length,1);assert.equal(f.runs[0].user_id,A);
