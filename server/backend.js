@@ -111,7 +111,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       if(resource==='agents'){
         const endpoint=config.url+'/functions/v1/pull-mcp';
         if(request.method==='GET'){
-          const result=await client(access).from('pull_agent_tokens').select('id,label,scopes,expires_at,created_at,revoked_at').eq('user_id',user.id).order('created_at',{ascending:false}).all();
+          const result=await client(access).from('pull_agent_tokens').select('id,label,scopes,expires_at,created_at,revoked_at,last_chat_poll_at').eq('user_id',user.id).order('created_at',{ascending:false}).all();
           if(result.error)return reply(503,{error:'Agent access setup is unavailable.'});
           return reply(200,{configured:true,endpoint,tokens:(result.data||[]).filter(t=>!t.revoked_at&&new Date(t.expires_at)>now())});
         }
@@ -121,7 +121,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
           return reply(status,result);
         }
         if(body.action==='create'){
-          if(typeof body.label!=='string'||!body.label.trim()||body.label.length>80||!Array.isArray(body.scopes)||!body.scopes.length||!body.scopes.every(s=>['workspace:read','drafts:write'].includes(s)))return reply(400,{error:'Name the agent and choose supported permissions.'});
+          if(typeof body.label!=='string'||!body.label.trim()||body.label.length>80||!Array.isArray(body.scopes)||!body.scopes.length||!body.scopes.every(s=>['workspace:read','drafts:write','chat:relay'].includes(s)))return reply(400,{error:'Name the agent and choose supported permissions.'});
           const token='pull_agent_'+randomBytes(32).toString('base64url'),scopes=[...new Set(body.scopes)];
           if(scopes.includes('drafts:write')&&!scopes.includes('workspace:read'))scopes.unshift('workspace:read');
           const result=await client(access).from('pull_agent_tokens').insert({user_id:user.id,label:body.label.trim(),scopes,token_hash:createHash('sha256').update(token).digest('hex'),expires_at:new Date(+now()+30*86400000).toISOString()}).select('id').single();
@@ -135,6 +135,25 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
           return result.data?reply(200,{revoked:true}):reply(404,{error:'Access token not found.'});
         }
         return reply(400,{error:'Unknown agent access action.'});
+      }
+      if(resource==='agent-chat'){
+        const db=client(access).from('pull_agent_chat_requests');
+        if(request.method==='GET'){
+          const result=await db.select('id,question,use_workspace,answer,status,created_at,claimed_at,answered_at,expires_at').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20).all();
+          if(result.error)return reply(503,{error:'Your agent conversation is temporarily unavailable.'});
+          return reply(200,{messages:result.data.reverse()});
+        }
+        if(Object.keys(body).some(key=>!['action','question','use_workspace'].includes(key))||body.action!=='ask'||typeof body.question!=='string'||!body.question.trim()||body.question.length>5000||typeof body.use_workspace!=='boolean')return reply(400,{error:'Write a question of up to 5,000 characters and choose whether your agent may use Pull data.'});
+        const accessRows=await client(access).from('pull_agent_tokens').select('scopes,expires_at,revoked_at').eq('user_id',user.id).all();
+        if(accessRows.error)return reply(503,{error:'Could not verify conversation access.'});
+        if(!accessRows.data.some(token=>!token.revoked_at&&new Date(token.expires_at)>now()&&token.scopes?.includes('chat:relay')))return reply(409,{error:'Create a conversation relay key in Connect your AI first.'});
+        const workspace=await client(access).from('pull_workspaces').select('revision').eq('user_id',user.id).maybeSingle();
+        if(workspace.error)return reply(503,{error:'Could not verify your saved workspace.'});
+        if(!workspace.data)return reply(409,{error:'Save your workspace to the cloud before asking your agent here.'});
+        const result=await db.insert({user_id:user.id,question:body.question.trim(),use_workspace:body.use_workspace}).select('id,question,use_workspace,answer,status,created_at,claimed_at,answered_at,expires_at').single();
+        if(result.error?.code==='54000')return reply(429,{error:'Wait for your agent to answer, or try again later.'});
+        if(result.error||!result.data)return reply(503,{error:'Could not queue your question. Nothing was sent to an agent.'});
+        return reply(201,{message:result.data});
       }
       if(resource==='profile'){
         const db=client(access).from('pull_profiles');
@@ -159,5 +178,5 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       return reply(200,result.data);
     } catch {return reply(503,{error:'The cloud service is temporarily unavailable. Your local work is safe.'});}
   }
-  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents')};
+  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents'),agentChat:r=>handle(r,'agent-chat')};
 }

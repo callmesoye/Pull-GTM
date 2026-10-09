@@ -4,7 +4,7 @@ import {createHash} from 'node:crypto';
 import {createBackend} from '../server/backend.js';
 import {prepareAI,generateReply,defaultModel} from '../server/ai.js';
 
-const env={SUPABASE_URL:'https://project.supabase.co',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_fixture',AI_GATEWAY_API_KEY:'test-gateway-credential'};
+const env={SUPABASE_URL:'https://project.supabase.co',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_fixture',AI_GATEWAY_API_KEY:'test-gateway-credential',PULL_HOSTED_AI_ENABLED:'true'};
 const request=(path,body,account='A')=>new Request('https://pull.example/api/'+path,{method:body===undefined?'GET':'POST',headers:{origin:'https://pull.example','Content-Type':'application/json',cookie:'__Host-pull-access=fixture-session','X-Pull-Account':account},body:body===undefined?undefined:JSON.stringify(body)});
 function fixture({quota=true,gatewayStatus=200,configured=true}={}){
   const calls=[];
@@ -32,6 +32,13 @@ test('AI context is bounded and excludes email, account credentials and arbitrar
 test('AI availability is reported without exposing credentials or generating fake replies',async()=>{
   const {backend}=fixture({configured:false});const status=await backend.ai(request('ai'));assert.deepEqual(await status.json(),{configured:false,model:defaultModel,requiresSignIn:true});
   const response=await backend.ai(request('ai',{message:'Help'}));assert.equal(response.status,503);assert.ok(!(await response.text()).includes('reply'));
+});
+test('Hosted model calls are disabled by default even when a gateway credential exists',async()=>{
+  const calls=[];
+  const backend=createBackend({env:{...env,PULL_HOSTED_AI_ENABLED:undefined},transport:async(input)=>{calls.push(input);return new URL(input).pathname==='/auth/v1/user'?Response.json({id:'A',email:'private@example.test'}):Response.json({},{status:500});}});
+  assert.equal((await backend.ai(request('ai',{message:'Help'}))).status,503);
+  assert.ok(!calls.some(input=>new URL(input).host==='ai-gateway.vercel.sh'));
+  assert.ok(!calls.some(input=>new URL(input).pathname.includes('claim_pull_ai_request')));
 });
 test('AI requires matching verified account and quota before model invocation',async()=>{
   const {backend,calls}=fixture({quota:false});assert.equal((await backend.ai(request('ai',{message:'Help'},'B'))).status,409);

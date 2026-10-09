@@ -1,7 +1,7 @@
 export const defaultModel='openai/gpt-5.4-mini';
 const text=(value,max)=>typeof value==='string'?value.slice(0,max):'';
 const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
-export function aiConfiguration(env){const credential=env.AI_GATEWAY_API_KEY||env.VERCEL_OIDC_TOKEN;return {credential,model:env.AI_GATEWAY_MODEL||defaultModel};}
+export function aiConfiguration(env){const credential=env.PULL_HOSTED_AI_ENABLED==='true'?(env.AI_GATEWAY_API_KEY||env.VERCEL_OIDC_TOKEN):null;return {credential,model:env.AI_GATEWAY_MODEL||defaultModel};}
 export function prepareAI(body){
   if(!object(body)||typeof body.message!=='string'||!body.message.trim()||body.message.length>5000)throw new Error('Write a question of up to 5,000 characters.');
   const c=object(body.context)?body.context:{};

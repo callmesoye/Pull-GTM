@@ -35,7 +35,13 @@ Run **Test access** in Pull while the newly created key is displayed. This check
 
 > Use Pull to summarize my saved workspace and show the prospects I’ve reviewed.
 
-The read scope provides `get_workspace_summary` and `list_reviewed_prospects`. It uses the saved cloud workspace and excludes contact emails from prospect results. Optional draft permission adds `propose_draft`, which can create or replace a draft for an eligible reviewed prospect, requires the latest workspace revision, and leaves the draft unprepared for owner review. No tool discovers contacts or sends outreach.
+The read scope provides `get_workspace_summary` and `list_reviewed_prospects`. It uses the saved cloud workspace and excludes contact emails from prospect results. Optional draft permission adds `propose_draft`, which can create or replace a draft for an eligible reviewed prospect, requires the latest workspace revision, and leaves the draft unprepared for owner review. Conversation relay permission adds `get_pull_question` and `answer_pull_question`. No tool discovers contacts or sends outreach.
+
+## Talk to your agent inside Pull
+
+Choose **Read and answer Pull conversations**, save the workspace, and create a new key. Connect that key to a supported client. In Pull's AI Mode, copy the startup instruction and paste it into a session with your own agent. Keep that agent session running while you ask questions in Pull. The agent must call `get_pull_question` again to collect each pending question and call `answer_pull_question` with its answer. Pull cannot force a third-party agent to run from an MCP connection alone, and a listed key is not proof of an active client. The recent activity indicator means only that a key checked for questions during the last two minutes.
+
+Each question can allow or disallow use of the saved Pull workspace. The agent may use voice and preferences from its own context when relevant, but should not disclose private memories or imply that such preferences are verified market facts. Pull does not fund model replies in this mode. Without a running relay, AI Mode still shows rule-based guidance and prepares prompts for use in your own AI app. It can help plan an automation in chat; executing a saved Pull workflow still requires the owner to approve and run it in Pull.
 
 Leaving the wizard or changing accounts clears the displayed key. If you lose it, revoke the old key and create another. A listed active key does not itself prove a client connection. If the list is empty after connecting, confirm that you saved the right account’s workspace and shortlisted eligible prospects.
 

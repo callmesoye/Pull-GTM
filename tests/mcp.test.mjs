@@ -18,6 +18,8 @@ async function fixture({scopes=['workspace:read','drafts:write'],revoked=false,e
   const store={
     authenticate:async hash=>{calls.push(['auth',hash]);return hash===tokenHash?(limited?{limited:true}:structuredClone(token)):null;},
     loadWorkspace:async owner=>{calls.push(['load',owner]);return structuredClone(rows.get(owner)||null);},
+    claimQuestion:async hash=>{calls.push(['claim',hash]);return {pending:true,id:'11111111-1111-4111-8111-111111111111',question:'Help me plan.',useWorkspace:true};},
+    answerQuestion:async(hash,id,answer)=>{calls.push(['answer',hash,id,answer]);return id==='11111111-1111-4111-8111-111111111111'?{answered:true,id}:{error:'QUESTION_UNAVAILABLE'};},
     commitDraft:async(hash,args)=>{
       calls.push(['commit',hash,structuredClone(args)]);
       if(hash!==tokenHash||token.revoked_at||new Date(token.expires_at)<=now||!token.scopes.includes('drafts:write'))return {error:'ACCESS_DENIED'};
@@ -57,6 +59,19 @@ test('Revoked, expired, and quota-exhausted tokens cannot reach workspace data',
 test('Read-only tokens advertise no write tool and cannot invoke a hidden write',async()=>{
   const f=await fixture({scopes:['workspace:read']});const listed=await f.handler(request(rpc('tools/list')));assert.deepEqual((await listed.json()).result.tools.map(t=>t.name),['get_workspace_summary','list_reviewed_prospects']);
   const {message}=await invoke(f,'propose_draft',proposed());assert.equal(message.result.isError,true);assert.ok(!f.calls.some(c=>c[0]==='commit'));assert.deepEqual(f.rows.get('ownerA').payload.drafts,{});
+});
+test('Conversation relay tools appear only with explicit permission and preserve the agent response',async()=>{
+  const denied=await fixture({scopes:['workspace:read']});
+  assert.equal((await invoke(denied,'get_pull_question')).message.result.isError,true);
+  assert.ok(!denied.calls.some(c=>c[0]==='claim'));
+  const f=await fixture({scopes:['workspace:read','chat:relay']});
+  const listed=await f.handler(request(rpc('tools/list')));
+  assert.deepEqual((await listed.json()).result.tools.map(t=>t.name),['get_workspace_summary','list_reviewed_prospects','get_pull_question','answer_pull_question']);
+  const claimed=await invoke(f,'get_pull_question');assert.equal(JSON.parse(claimed.message.result.content[0].text).useWorkspace,true);
+  const answered=await invoke(f,'answer_pull_question',{questionId:'11111111-1111-4111-8111-111111111111',answer:'A tailored answer.'});
+  assert.equal(JSON.parse(answered.message.result.content[0].text).answered,true);
+  assert.ok(f.calls.some(c=>c[0]==='answer'&&c[3]==='A tailored answer.'));
+  assert.ok(!f.calls.some(c=>c[0]==='load'));
 });
 test('Workspace access derives ownership from the token and rejects client-supplied owner IDs',async()=>{
   const f=await fixture();const own=await invoke(f,'get_workspace_summary');assert.equal(JSON.parse(own.message.result.content[0].text).identity,'Example Business');assert.deepEqual(f.calls.find(c=>c[0]==='load'),['load','ownerA']);

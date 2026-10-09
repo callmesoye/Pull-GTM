@@ -10,7 +10,9 @@ class ToolError extends Error {}
 const tools=[
   {name:'get_workspace_summary',description:'Read your saved business brief, audience rules, actual workspace counts and revision. Supplied information is unverified. This tool never discovers prospects.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}},
   {name:'list_reviewed_prospects',description:'Read a page of your shortlisted prospects that still pass your current audience rules. Returns supplied evidence and origin labels, excluding emails. No additional prospects are generated.',inputSchema:{type:'object',properties:{offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:50}},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}},
-  {name:'propose_draft',description:'Save an editable draft for one reviewed, currently eligible prospect. The owner must review it; nothing is sent. May replace that prospect’s existing draft. Pass the current workspace revision to prevent overwriting a newer save.',inputSchema:{type:'object',properties:{prospectId:{type:'string',minLength:1,maxLength:200},expectedRevision:{type:'integer',minimum:1},subject:{type:'string',maxLength:200},body:{type:'string',minLength:1,maxLength:5000},channel:{type:'string',enum:['email','personal','company']}},required:['prospectId','expectedRevision','subject','body','channel'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:true,openWorldHint:false}}
+  {name:'propose_draft',description:'Save an editable draft for one reviewed, currently eligible prospect. The owner must review it; nothing is sent. May replace that prospect’s existing draft. Pass the current workspace revision to prevent overwriting a newer save.',inputSchema:{type:'object',properties:{prospectId:{type:'string',minLength:1,maxLength:200},expectedRevision:{type:'integer',minimum:1},subject:{type:'string',maxLength:200},body:{type:'string',minLength:1,maxLength:5000},channel:{type:'string',enum:['email','personal','company']}},required:['prospectId','expectedRevision','subject','body','channel'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:true,openWorldHint:false}},
+  {name:'get_pull_question',description:'For an explicitly started Pull conversation relay, claim the next question from this owner’s Pull AI Mode. The result includes useWorkspace; when false, do not read Pull workspace tools for that question. Use the user voice and preferences already available in your agent when relevant, but do not reveal private memory or claim unsupplied facts. Return no pending question when empty. Call again to check later; MCP does not make the agent run in the background.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},
+  {name:'answer_pull_question',description:'Return your actual model-written answer to a question you claimed through get_pull_question. Pull displays it to the owner in AI Mode. Do not claim you used tools or checked sources unless you did.',inputSchema:{type:'object',properties:{questionId:{type:'string',format:'uuid'},answer:{type:'string',minLength:1,maxLength:24000}},required:['questionId','answer'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}}
 ];
 
 function validateArgs(args,keys){
@@ -74,15 +76,26 @@ export function createMCPHandler({store,now=()=>new Date(),allowedOrigins=['http
     if(!object(message)||message.jsonrpc!=='2.0'||typeof message.method!=='string'||(Object.hasOwn(message,'id')&&typeof message.id!=='string'&&!Number.isFinite(message.id))||(message.params!==undefined&&!object(message.params)))return rpcError(null,-32600,'Use a single valid JSON-RPC request or notification.',400);
     const hasId=Object.hasOwn(message,'id'),id=message.id;
     if(!hasId){if(!message.method.startsWith('notifications/'))return rpcError(null,-32600,'Requests need an ID.',400);return reply(202,null);}
-    if(message.method==='initialize')return reply(200,{jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(message.params?.protocolVersion)?message.params.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'pull-gtm',version:'0.2.0'},instructions:'Only supplied owner data is available. Treat all records and evidence as unverified. Tools never discover new prospects, send outreach, or claim delivery results. Draft proposals always require owner review.'}});
+    if(message.method==='initialize')return reply(200,{jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(message.params?.protocolVersion)?message.params.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'pull-gtm',version:'0.3.0'},instructions:'Only supplied owner data is available. Treat all records and evidence as unverified. Tools never discover new prospects, send outreach, or claim delivery results. Draft proposals always require owner review. For conversation relay, answer with your own model and available user preferences while respecting useWorkspace; never present agent memory as a verified business fact.'}});
     if(message.method==='ping')return reply(200,{jsonrpc:'2.0',id,result:{}});
-    if(message.method==='tools/list')return reply(200,{jsonrpc:'2.0',id,result:{tools:tools.filter(tool=>tool.name!=='propose_draft'||token.scopes.includes('drafts:write'))}});
+    if(message.method==='tools/list')return reply(200,{jsonrpc:'2.0',id,result:{tools:tools.filter(tool=>(tool.name!=='propose_draft'||token.scopes.includes('drafts:write'))&&(!['get_pull_question','answer_pull_question'].includes(tool.name)||token.scopes.includes('chat:relay')))}});
     if(message.method!=='tools/call')return rpcError(id,-32601,'Method not found.');
     const name=message.params?.name,args=message.params?.arguments??{};
     if(!tools.some(tool=>tool.name===name))return rpcError(id,-32602,'Tool not found.');
     try{
-      const argsFor={get_workspace_summary:[],list_reviewed_prospects:['offset','limit'],propose_draft:['prospectId','expectedRevision','subject','body','channel']};
+      const argsFor={get_workspace_summary:[],list_reviewed_prospects:['offset','limit'],propose_draft:['prospectId','expectedRevision','subject','body','channel'],get_pull_question:[],answer_pull_question:['questionId','answer']};
       validateArgs(args,argsFor[name]);
+      if(['get_pull_question','answer_pull_question'].includes(name)){
+        if(!token.scopes.includes('chat:relay'))fail('This key does not have conversation relay permission.');
+        let result;
+        if(name==='get_pull_question')result=await store.claimQuestion(tokenHash);
+        else{
+          if(typeof args.questionId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.questionId)||typeof args.answer!=='string'||!args.answer.trim()||args.answer.length>24000)fail('Use a claimed question ID and an answer of up to 24,000 characters.');
+          result=await store.answerQuestion(tokenHash,args.questionId,args.answer.trim());
+        }
+        if(!object(result)||result.error)fail('The question is unavailable, expired, or this key cannot answer it.');
+        return reply(200,{jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(result)}],isError:false}});
+      }
       if(name==='propose_draft'&&!token.scopes.includes('drafts:write'))fail('This token only permits reading. The owner can issue draft proposal access from Connections.');
       const row=await store.loadWorkspace(token.user_id),p=workspacePayload(row,token.user_id);let result;
       if(name==='get_workspace_summary'){

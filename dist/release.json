@@ -1,6 +1,6 @@
 {
   "name": "Pull GTM",
-  "release": "2026-10-09-unified-connect-support",
+  "release": "2026-10-09-own-agent-chat-relay",
   "backend": "Supabase cyakphnpljeesotbjerz",
-  "mcp": "pull-mcp v2"
+  "mcp": "pull-mcp v3"
 }
