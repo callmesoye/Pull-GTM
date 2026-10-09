@@ -76,12 +76,15 @@ export async function discoverPrivatePages(input,{key,provider='brave',maxQuerie
   let requestsUsed=0;
   for(const q of queries.slice(0,maxQueries)) {
     const endpoint=new URL(provider==='serper'?'https://google.serper.dev/search':'https://api.search.brave.com/res/v1/web/search');
-    endpoint.searchParams.set('q',q.slice(0,500));
-    endpoint.searchParams.set(provider==='serper'?'num':'count',String(Math.min(input.limit,20)));
-    if(provider==='brave')endpoint.searchParams.set('safesearch','strict');
+    const query=q.slice(0,500), count=Math.min(input.limit,20);
+    if(provider==='brave'){
+      endpoint.searchParams.set('q',query);
+      endpoint.searchParams.set('count',String(count));
+      endpoint.searchParams.set('safesearch','strict');
+    }
     const headers=provider==='serper'?{'X-API-KEY':key,'Content-Type':'application/json','Accept':'application/json'}:{'X-Subscription-Token':key,'Accept':'application/json'};
     requestsUsed++;
-    const response=await transport(endpoint,{method:provider==='serper'?'POST':'GET',headers,signal:AbortSignal.timeout(10000),redirect:'error'});
+    const response=await transport(endpoint,{method:provider==='serper'?'POST':'GET',headers,...(provider==='serper'?{body:JSON.stringify({q:query,num:count})}:{}),signal:AbortSignal.timeout(10000),redirect:'error'});
     if(!response.ok)throw new Error(response.status===429?'Search limit reached. Try again later.':'Source search is temporarily unavailable.');
     const data=await response.json();
     const rawRows=provider==='serper'?data?.organic:data?.web?.results;
