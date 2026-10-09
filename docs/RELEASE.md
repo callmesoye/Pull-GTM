@@ -17,7 +17,7 @@ The current local suite passes all 137 tests and the syntax checks. AI Mode now 
 | Supabase | Existing project `cyakphnpljeesotbjerz` |
 | MCP | [pull-mcp endpoint](https://cyakphnpljeesotbjerz.supabase.co/functions/v1/pull-mcp) |
 
-The agent-chat SQL migration and `pull-mcp` version 3 were applied to the existing Supabase project, and the transactional chat verification passed. A successful Vercel deployment of this combined source has not yet been recorded here. Before marking it live, record its source commit, Vercel deployment URL, and remote checks in [DEPLOYMENT.md](DEPLOYMENT.md).
+The agent-chat SQL migration and `pull-mcp` version 3 were applied to the existing Supabase project, and the transactional chat verification passed. GitHub commit [`7eb3ac9`](https://github.com/callmesoye/Pull-GTM/commit/7eb3ac909e7466a9244caceefaf9e7eb7c741b02) was deployed by the existing Vercel project as production deployment `RMC1VU8efZcGszbqkGqSSDh8Woza`, which showed **Ready**. The live [production site](https://pull-gtm.vercel.app) displayed the new own-agent AI Mode, the automation-planning prompt, and the Connect page reported that the signed-in account was ready to create an agent connection. The unconnected AI Mode prompt handoff was exercised in that browser. A real third-party agent relay was not exercised; it requires a running user agent and owner-issued access key.
 
 ## Availability
 
