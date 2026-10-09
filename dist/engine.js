@@ -50,6 +50,7 @@ export function deduplicate(prospects) {
 export function qualify(p,rules,now=new Date()) {
   const checks=[],fail=[],missing=[];
   if(![p.name,p.company,p.email,p.profile_url].some(norm))missing.push('Prospect identity is missing');
+  if(p.origin==='discovery'&&p.private_verified!=='yes')missing.push('Confirm this is a current private-sector person and business');
   const match=(label,value,options,mode='exact')=>{
     if(!options.length)return;
     if(!norm(value)){missing.push(label+' is missing');checks.push({label,state:'unknown',detail:'Not provided'});return;}

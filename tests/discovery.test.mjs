@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {discoveryInput,privateSourcePage,discoverPrivatePages,searchConfiguration} from '../server/discovery.js';
+import {discoveryInput,privateSourcePage,discoverPrivatePages,searchConfiguration,assessSourceRelevance} from '../server/discovery.js';
+import {personFromSource} from '../server/person-evidence.js';
 import {createBackend} from '../server/backend.js';
 
 test('discovery accepts distinct goals and limits results to 50',()=>{
@@ -16,6 +17,47 @@ test('public and government pages are excluded even if search returns them',()=>
   assert.equal(privateSourcePage({title:'Public university jobs',url:'https://jobs.example.com',description:'Hiring'}),null);
   assert.equal(privateSourcePage({title:'Teachers in Lagos',url:'https://directory.example.com',description:'Teachers directory'}),null);
   assert.equal(privateSourcePage({title:'Private car dealership',url:'https://dealer.example.com',description:'Used cars in Lagos'}).source,'dealer.example.com');
+});
+
+test('source-backed people require an explicit name, role, company, and private-sector evidence',()=>{
+  const input=discoveryInput({audience:'Founders',industry:'Agriculture',location:'Lagos'});
+  const page=privateSourcePage({title:'Ada Okafor — Founder at Green Acre',url:'https://greenacre.example/team/ada',description:'Ada Okafor leads Green Acre, a private company in Lagos agriculture.'});
+  const relevance=assessSourceRelevance(page,input);
+  assert.equal(relevance.eligible,true);
+  const person=personFromSource(page,relevance);
+  assert.equal(person.name,'Ada Okafor');
+  assert.equal(person.company,'Green Acre');
+  assert.equal(person.identity_status,'source-asserted');
+  assert.equal(person.contact_status,'unknown');
+  assert.equal(person.source_url,page.url);
+  assert.equal(personFromSource({...page,title:'Ada Okafor | Founder | Green Acre'},relevance).company,'Green Acre');
+  assert.equal(personFromSource({...page,title:'Ada Okafor | Founder | LinkedIn'},relevance),null);
+  assert.equal(personFromSource({...page,source:'linkedin.com'},relevance),null);
+  assert.equal(personFromSource({...page,title:'Green Acre agriculture in Lagos'},relevance),null);
+  assert.equal(privateSourcePage({title:'Ada Okafor — Founder at Green Acre',url:'https://greenacre.example/team/ada',description:'Agriculture in Lagos'}),null);
+});
+
+test('relevance requires a complete industry phrase and reports unproven location',()=>{
+  const input=discoveryInput({audience:'Founder',industry:'Real estate',location:'Ikeja, Lagos'});
+  const unrelated={title:'Private company real-time founder tools',description:'Based in Lagos',source:'example.com'};
+  assert.equal(assessSourceRelevance(unrelated,input).matched.some(item=>item.label==='Industry or need'),false);
+  const matching={title:'Private real estate company founder',description:'Based in Lagos',source:'example.com'};
+  const assessment=assessSourceRelevance(matching,input);
+  assert.equal(assessment.eligible,true);
+  assert.ok(assessment.missing.includes('Location')===false,'Lagos is one of the requested places');
+  assert.ok(assessment.reason.includes('real, estate'));
+});
+
+test('live search ranks topical private sources and returns only explicitly sourced people',async()=>{
+  const transport=async()=>Response.json({organic:[
+    {title:'Private car dealership',link:'https://cars.example/showroom',snippet:'Used cars in Lagos'},
+    {title:'Ada Okafor — Founder at Green Acre',link:'https://greenacre.example/team/ada',snippet:'Ada Okafor leads Green Acre, a private company in Lagos agriculture.'},
+    {title:'Federal car registry',link:'https://cars.gov.ng',snippet:'Government registry'}
+  ]});
+  const result=await discoverPrivatePages(discoveryInput({audience:'Founders',industry:'Agriculture',location:'Lagos'}),{key:'fixture',provider:'serper',maxQueries:1,transport});
+  assert.equal(result.people.length,1);
+  assert.equal(result.people[0].name,'Ada Okafor');
+  assert.equal(result.candidates.length,1);
 });
 
 test('source search returns only live source candidates, with no invented people',async()=>{

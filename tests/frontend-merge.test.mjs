@@ -16,13 +16,13 @@ import {AccountGuard} from '../dist/cloud.js';
 async function workspace() {
   const elements=new Map(),events=new Map(),windowEvents=new Map(),calls=[];
   const element=selector=>{
-    if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',dataset:{},hidden:false,open:false,value:'',attributes:{},events:new Map(),classList:{toggle(){},add(){},remove(){}},setAttribute(key,value){this.attributes[key]=value;},querySelector:child=>element(selector+' '+child),querySelectorAll:()=>[],focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;},addEventListener(name,fn){this.events.set(name,fn);}});
+    if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',dataset:{},hidden:false,open:false,value:'',attributes:{},events:new Map(),classList:{toggle(){},add(){},remove(){}},setAttribute(key,value){this.attributes[key]=value;},insertAdjacentHTML(_where,html){this.innerHTML+=html;},querySelector:child=>element(selector+' '+child),querySelectorAll:()=>[],focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;},addEventListener(name,fn){this.events.set(name,fn);}});
     return elements.get(selector);
   };
   const document={body:{dataset:{}},querySelector:element,querySelectorAll:()=>[],addEventListener(name,fn){events.set(name,[...(events.get(name)||[]),fn]);}};
   const location={hash:'',protocol:'https:',pathname:'/',search:''};
   const context={...engine,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
-  vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,visibleRows,guideItems,render,aiContext,get:()=>({state,cloud,view,tab,query,assistantState,agentState,profile,automationData}),update:changes=>{if(changes.state)state={...state,...changes.state};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
+  vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,visibleRows,guideItems,render,aiContext,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData}),update:changes=>{if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
   return {app:context.testApp,element,location,calls,hash:()=>windowEvents.get('hashchange')(),click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
 }
@@ -104,4 +104,19 @@ test('Email-only identities remain searchable and produce valid saved audit reco
   await click({suppress:prospects[0].id});
   assert.equal(app.get().state.audit[0].detail,'ada@example.test');
   assert.doesNotThrow(()=>validateWorkspace(app.get().state));
+});
+
+test('A sourced person enters review, never an approved or contacted list',async()=>{
+  const {app,click}=await workspace();
+  const person={id:'source-a',name:'Ada Okafor',title:'Founder',company:'Green Acre',source_url:'https://greenacre.example/team/ada',source_title:'Ada Okafor — Founder at Green Acre',source_excerpt:'Private company in Lagos',reason:'Audience: founder',missing:['Location']};
+  app.update({discovery:{people:[person]},state:{rules:{roles:'Founder',industries:'Agriculture',countries:'Nigeria',min:'',max:'',signals:'',days:'90',evidence:true}}});
+  app.navigate('prospects');
+  await click({discoveredPerson:'source-a'});
+  const saved=app.get().state;
+  assert.equal(saved.prospects.length,1);
+  assert.equal(saved.prospects[0].origin,'discovery');
+  assert.equal(saved.prospects[0].private_verified,'no');
+  assert.equal(saved.shortlist.length,0);
+  assert.equal(engine.qualify(saved.prospects[0],saved.rules).status,'review');
+  assert.doesNotThrow(()=>validateWorkspace(saved));
 });

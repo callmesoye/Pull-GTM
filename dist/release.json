@@ -1,6 +1,6 @@
 {
   "name": "Pull GTM",
-  "release": "2026-10-09-budgeted-source-search",
+  "release": "2026-10-09-source-backed-people",
   "backend": "Supabase cyakphnpljeesotbjerz",
   "mcp": "pull-mcp v3",
   "searchAdapters": ["serper", "brave"]
