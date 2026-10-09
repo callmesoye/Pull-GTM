@@ -90,6 +90,8 @@ test('Serper requests use fixed endpoint and private key header with a strict re
   assert.equal(new URL(requests[0].url).origin,'https://google.serper.dev');
   assert.equal(requests[0].options.method,'POST');
   assert.equal(requests[0].options.headers['X-API-KEY'],'secret-example');
+  assert.deepEqual(JSON.parse(requests[0].options.body),{q:'Car buyers Used cars Lagos private business',num:20});
+  assert.equal(new URL(requests[0].url).search,'');
   assert.equal(requests[0].options.redirect,'error');
   assert.equal(result.requestsUsed,1);
   assert.equal(result.candidates.length,1);
