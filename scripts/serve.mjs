@@ -11,7 +11,7 @@ const types = {'.html':'text/html; charset=utf-8','.js':'text/javascript; charse
 const server = http.createServer(async(req,res)=>{
   try {
     const requestUrl=new URL(req.url,'http://'+(req.headers.host||'127.0.0.1:4173'));
-    if(['/api/session','/api/workspace','/api/profile','/api/auth','/api/automations','/api/ai','/api/agents','/api/agent-chat'].includes(requestUrl.pathname)){
+    if(['/api/session','/api/workspace','/api/profile','/api/auth','/api/automations','/api/ai','/api/agents','/api/agent-chat','/api/discovery'].includes(requestUrl.pathname)){
       let body='';for await(const chunk of req){body+=chunk;if(Buffer.byteLength(body)>3*1024*1024){res.writeHead(413);return res.end('{"error":"Request is too large."}');}}
       const request=new Request(requestUrl,{method:req.method,headers:req.headers,body:['GET','HEAD'].includes(req.method)?undefined:body});
       const options={transport:curlFetch},backend=createBackend(options),route=requestUrl.pathname.split('/').pop();

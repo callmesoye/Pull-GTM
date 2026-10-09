@@ -11,6 +11,7 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 import {configuration} from './config.js';
 export {configuration} from './config.js';
 import {googleConfiguration} from './auth.js';
+import {discoveryInput,discoverPrivatePages} from './discovery.js';
 
 function readCookies(request) {
   return Object.fromEntries((request.headers.get('cookie') || '').split(';').flatMap(part => {
@@ -41,6 +42,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
     if (!['GET','POST'].includes(request.method)) return reply(405,{error:'Method not allowed.'});
     if (request.method==='POST' && (request.headers.get('origin')!==url.origin || request.headers.get('sec-fetch-site')==='cross-site')) return reply(403,{error:'Open Pull GTM directly to continue.'});
     if(resource==='ai'&&request.method==='GET'){const ai=aiConfiguration(env);return reply(200,{configured:Boolean(config&&ai.credential),model:ai.model,requiresSignIn:true});}
+    if(resource==='discovery'&&request.method==='GET')return reply(200,{configured:Boolean(config&&env.BRAVE_SEARCH_API_KEY),provider:env.BRAVE_SEARCH_API_KEY?'Brave Search API':null,requiresSignIn:true});
     if (!config) {
       if(resource==='session'&&request.method==='GET')return reply(200,{configured:false,user:null});
       if(resource==='session'&&request.method==='POST'&&request.headers.get('content-type')?.startsWith('application/json')){
@@ -100,6 +102,11 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       const user=await verified();
       if(!user)return reply(401,{error:'Sign in to access your saved workspace.'});
       if(request.headers.get('x-pull-account')!==user.id)return reply(409,{code:'ACCOUNT_CHANGED',error:'Your account changed in another tab. Open your cloud workspace again.'});
+      if(resource==='discovery'){
+        let input;try{input=discoveryInput(body);}catch(error){return reply(400,{error:error.message});}
+        try{return reply(200,await discoverPrivatePages(input,{key:env.BRAVE_SEARCH_API_KEY,transport}));}
+        catch(error){return reply(503,{error:error.message});}
+      }
       if(resource==='ai'){
         try{prepareAI(body);}catch(e){return reply(400,{error:e.message});}
         if(!aiConfiguration(env).credential)return reply(503,{error:'AI Gateway needs configuration before a model can respond.'});
@@ -178,5 +185,5 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       return reply(200,result.data);
     } catch {return reply(503,{error:'The cloud service is temporarily unavailable. Your local work is safe.'});}
   }
-  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents'),agentChat:r=>handle(r,'agent-chat')};
+  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents'),agentChat:r=>handle(r,'agent-chat'),discovery:r=>handle(r,'discovery')};
 }

@@ -103,6 +103,25 @@
 .home-brief h2 { font-size: .84rem; }
 .home-brief p { margin-top: 7px; color: var(--muted); font-size: .79rem; max-width: 70ch; overflow-wrap: anywhere; }
 .auth-options{margin-top:24px}.auth-google{width:100%;background:white;border:1px solid var(--control-border,#808c9e);color:#18334a;justify-content:center;gap:12px}.google-mark{color:#4285f4;font-size:20px;font-weight:600}.auth-divider{display:flex;align-items:center;gap:14px;margin:22px 0;color:#607080;font-size:13px}.auth-divider:before,.auth-divider:after{content:'';height:1px;background:#e4e8ed;flex:1}.auth-switch{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:16px;font-size:14px}.auth-provider-note{margin-top:10px;text-align:center}.account-form{margin-top:0}.account-form .form-actions .button{width:100%}
+.ai-chat-layout .ai-main{display:flex;flex-direction:column;min-height:650px;background:#fff}
+.ai-chat-layout .ai-transcript{flex:1;min-height:395px;max-height:620px;padding:34px 30px 18px;margin:0;border:0}
+.ai-chat-layout .ai-welcome{padding:46px 0 12px;max-width:650px}
+.ai-chat-layout .ai-welcome h2{font-family:var(--font-body);font-weight:550;letter-spacing:-.055em;font-size:clamp(2.2rem,3.4vw,3.35rem);line-height:1.14}
+.ai-chat-layout .ai-welcome h2 em{font-style:normal;font-weight:550;color:#3c5878}
+.ai-chat-layout .ai-prompts{max-width:580px;margin-top:52px;gap:0;grid-template-columns:1fr}
+.ai-chat-layout .ai-prompts>button{flex-direction:row;align-items:center;border:0;border-bottom:1px solid #e2e9f2;border-radius:0;background:transparent;padding:18px 5px;gap:15px}
+.ai-chat-layout .ai-prompts>button>.ui-icon{top:auto;right:6px}
+.ai-chat-layout .ai-prompts strong{max-width:none;font-size:.88rem}
+.ai-chat-layout .ai-prompts>button:hover{background:#f8faff}
+.ai-chat-layout .agent-ai-quiet-next{font-size:.72rem;color:#7a8ca4;line-height:1.6;margin-top:26px}
+.ai-chat-layout .agent-ai-quiet-next .link-button{font-size:inherit}
+.ai-chat-layout .agent-ai-composer{margin-top:auto}
+.ai-chat-layout .agent-ai-relay{margin:0 22px 17px;padding:12px 16px;background:#f7f9fd}
+.ai-chat-layout .agent-ai-relay strong,.ai-chat-layout .agent-ai-relay p,.ai-chat-layout .agent-ai-relay button{display:inline;font-size:.68rem}
+.ai-chat-layout .agent-ai-relay p{margin:0 8px}
+.ai-chat-layout .ai-message{max-width:85%}
+@media(max-width:650px){.ai-chat-layout .ai-main{min-height:560px}.ai-chat-layout .ai-transcript{padding:22px 18px;min-height:350px}.ai-chat-layout .ai-welcome{padding:23px 0}.ai-chat-layout .ai-prompts{margin-top:28px}.ai-chat-layout .ai-message{max-width:100%}.ai-chat-layout .agent-ai-relay{margin:0 18px 16px}}
+.discovery-panel{margin-bottom:22px;overflow:hidden}.discovery-panel .panel-head{align-items:start}.discovery-panel .panel-head h2{margin-top:6px}.discovery-panel .panel-head p{max-width:55ch}.discovery-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:23px 25px;border-top:1px solid #e5ebf2}.discovery-form .field{margin:0}.discovery-form .field input{width:100%}.discovery-actions{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:16px}.discovery-actions label{font-size:.75rem;color:#62748c}.discovery-actions select{border:1px solid #d5deeb;border-radius:7px;padding:7px;color:#3c5878;background:#fff}.discovery-results{padding:0 25px 22px}.discovery-results .small-print{line-height:1.6}.discovery-list{display:grid;gap:11px;margin-top:16px;max-height:480px;overflow:auto}.discovery-list article{padding:17px 18px;border:1px solid #e1e7f0;border-radius:11px;background:#fbfcff}.discovery-list h3{font-size:.9rem;margin:7px 0}.discovery-list a{color:#3b5c93;text-decoration:none}.discovery-list a:hover{text-decoration:underline}.discovery-list p{font-size:.73rem;color:#687b92;line-height:1.6}@media(max-width:700px){.discovery-form{grid-template-columns:1fr}.discovery-actions{align-items:stretch;flex-direction:column}}
 
 /* Continuous settings document. Only the index sticks; content uses the page scroller. */
 .settings-view { --settings-offset: 104px; display: grid; grid-template-columns: 158px minmax(0, 1fr); gap: 32px; align-items: start; }
