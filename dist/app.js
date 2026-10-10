@@ -1,4 +1,4 @@
-import {qualify,parseCSV,deduplicate,safeUrl,csvExport,draftFor,hasIdentity} from './engine.js';
+import {qualify,parseCSV,planCSVImport,deduplicate,safeUrl,csvExport,draftFor,hasIdentity} from './engine.js';
 import {contactOptions,displayIdentity,validContactUrl} from './contact.js';
 import {samples} from './sample.js';
 import {renderSimpleHome} from './simple-home.js';
@@ -186,13 +186,20 @@ document.addEventListener('input',e=>{
 $('#file-input').addEventListener('change',async e=>{
   const file=e.target.files[0];if(!file)return;
   try {
-    const parsed=parseCSV(await file.text()),clean=deduplicate(parsed);
-    const apply=()=>{state.prospects=clean.prospects;state.duplicates=clean.duplicates;state.shortlist=[];state.drafts={};state.audit=[];state.mode='import';tab='all';query='';record('Prospects imported',state.prospects.length+' unique records; '+clean.duplicates+' duplicates removed.');navigate('prospects');runImportAutomations();toast('Imported '+state.prospects.length+' unique prospects. All records are visible for review.');};
+    const plan=planCSVImport(await file.text()),clean=deduplicate(plan.prospects);
+    if(!clean.prospects.length&&!plan.targets.length)throw new Error('No contact or search criteria were found. Try a column for name, business, email, profile link, role, industry, or location.');
+    const offerTargets=()=>{
+      if(!plan.targets.length)return;
+      modal('Use your CSV to find prospects',`<p>${plan.targets.length} ${plan.targets.length===1?'row describes':'rows describe'} who or where to search${plan.skipped.length?`; ${plan.skipped.length} empty or unrecognised ${plan.skipped.length===1?'row was':'rows were'} skipped`:''}. Choose a row and complete any missing details before searching live sources.</p><div class="field"><label for="csv-target-row">Search from row</label><select id="csv-target-row">${plan.targets.map((target,index)=>`<option value="${index}">Row ${target.row}: ${escape([target.audience,target.industry,target.location].filter(Boolean).join(' · '))}</option>`).join('')}</select></div>`,`<button class="button secondary" data-action="close">Close</button><button class="button primary" id="use-csv-target">Use these search details</button>`);
+      $('#use-csv-target').addEventListener('click',()=>{const target=plan.targets[Number($('#csv-target-row').value)||0];discovery.search={...discovery.search,audience:target.audience||discovery.search.audience,industry:target.industry||discovery.search.industry,location:target.location||discovery.search.location};$('#detail-dialog').close();navigate('prospects');toast('Search details added from CSV row '+target.row+'. Review them, then find prospects.');},{once:true});
+    };
+    if(!clean.prospects.length){offerTargets();e.target.value='';return;}
+    const apply=()=>{state.prospects=clean.prospects;state.duplicates=clean.duplicates;state.shortlist=[];state.drafts={};state.audit=[];state.mode='import';tab='all';query='';record('Prospects imported',state.prospects.length+' unique records; '+clean.duplicates+' duplicates removed; '+plan.targets.length+' target rows; '+plan.skipped.length+' skipped rows.');navigate('prospects');runImportAutomations();toast('Imported '+state.prospects.length+' unique prospects'+(plan.skipped.length?'; '+plan.skipped.length+' rows skipped':'')+'. Review evidence before outreach.');offerTargets();};
     if(state.prospects.length&&state.mode==='import'){
       modal('Replace your current prospect list?',`<p>The new list has ${clean.prospects.length} unique prospects. Replacing this list resets the shortlist, drafts, and activity. You can download a backup first.</p>`,`<button class="button secondary" data-action="backup">Download backup</button><button class="button secondary" data-action="close">Keep current list</button><button class="button primary" id="apply-import">Replace list</button>`);
       $('#apply-import').addEventListener('click',()=>{$('#detail-dialog').close();apply();},{once:true});
     }else apply();
-  }catch(error){modal('Could not import this CSV',`<p>${escape(error.message)}</p><p class="small-print">Your current list was not changed. Company names are optional; check that the file has a header row and at least one data row.</p>`,`<button class="button secondary" data-action="template">Download CSV template</button><button class="button primary" data-action="close">Close</button>`);}
+  }catch(error){modal('Could not import this CSV',`<p>${escape(error.message)}</p><p class="small-print">Your current list was not changed. Pull accepts partial contact rows and separate search-criteria rows; it never invents missing people.</p>`,`<button class="button secondary" data-action="template">Download CSV template</button><button class="button primary" data-action="close">Close</button>`);}
   e.target.value='';
 });
 function download(name,content,type){const url=URL.createObjectURL(new Blob([content],{type}));const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}

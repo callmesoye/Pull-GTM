@@ -50,11 +50,11 @@ test('Settings deep links survive navigation from another page',async()=>{
   assert.equal(location.hash,'#settings/security');
 });
 
-test('CSV import rejects unnamed rows without replacing the current list',async()=>{
+test('CSV import keeps usable contacts and offers targeting rows for live research',async()=>{
   const {app,element,import:importCSV}=await workspace();
   await importCSV('First Name,Last Name,Email Address,Company Name,Job Title\nAda,Lovelace,ada@example.test,,CEO\n,,other@example.test,,Founder\n,,,,CEO');
-  assert.equal(app.get().state.prospects.length,0);
-  assert.match(element('#dialog-content').innerHTML,/Row 4 has no person, company, email, or profile link/);
+  assert.equal(app.get().state.prospects.length,2);
+  assert.match(element('#dialog-content').innerHTML,/row describes who or where to search/);
 });
 
 test('review shows supplied contact paths for a real record and never claims a message was sent',async()=>{

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {qualify,parseCSV,deduplicate,safeUrl,csvExport,draftFor} from '../dist/engine.js';
+import {qualify,parseCSV,planCSVImport,deduplicate,safeUrl,csvExport,draftFor} from '../dist/engine.js';
 const now=new Date('2026-10-08T12:00:00Z');
 const rules={roles:'Founder, CEO, Head of Growth',industries:'SaaS',countries:'',min:'',max:'',signals:'',evidence:true,days:'90'};
 const prospect={id:'1',name:'Test Person',company:'Test Company',title:'Co-Founder',industry:'SaaS',country:'Nigeria',employees:'20',signal:'Hiring a sales team',signal_date:'2026-10-01',source_url:'https://example.com/jobs'};
@@ -16,6 +16,7 @@ test('Quoted commas, multiline values, BOM and escaped quotes parse correctly',(
 test('Malformed imports fail without inventing or discarding values',()=>{for(const csv of ['name,name\na,b','name,company\na','name,company\n"a,b','name,full_name\na,b'])assert.throws(()=>parseCSV(csv));});
 test('Company is optional and first plus last names form a prospect identity',()=>{const rows=parseCSV('First Name,Last Name,Email Address,Company Name\nAda,Lovelace,ada@example.com,\n,,other@example.com,');assert.equal(rows[0].name,'Ada Lovelace');assert.equal(rows[0].company,'');assert.equal(rows[1].email,'other@example.com');assert.equal(deduplicate(rows).prospects.length,2);});
 test('Rows without an identity are rejected instead of appearing as unnamed prospects',()=>{assert.throws(()=>parseCSV('role,industry\nCEO,SaaS\nFounder,SaaS'),/Row 2 has no person, company, email, or profile link/);});
+test('Flexible CSV import separates contacts from audience rows and never invents people',()=>{const plan=planCSVImport('Business Name,Role,Industry,City\nAda Studio,CEO,Design,Lagos\n,Teacher,Education,Ikeja');assert.equal(plan.prospects.length,1);assert.equal(plan.prospects[0].company,'Ada Studio');assert.equal(plan.targets.length,1);assert.equal(plan.targets[0].audience,'Teacher');assert.equal(plan.targets[0].location,'Ikeja');});
 test('A public-institution URL cannot be used as a prospect identity',()=>{assert.throws(()=>parseCSV('profile_url,title\nhttps://example.gov.ng/staff,Director'),/Row 2 has no person, company, email, or profile link/);});
 test('Untrusted links are not treated as source URLs',()=>{for(const u of ['javascript:alert(1)','data:text/html,x','https://user:secret@example.com','not a url'])assert.equal(safeUrl(u),'');assert.equal(safeUrl('https://example.com/'),'https://example.com/');});
 test('Text after a closing CSV quote is rejected rather than merged into a field',()=>{assert.throws(()=>parseCSV('name,company\n"Ada"other,Example'));assert.throws(()=>parseCSV('name,company\n"Ada"x"other",Example'));});
