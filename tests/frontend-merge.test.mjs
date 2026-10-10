@@ -127,7 +127,7 @@ test('Account avatar and workspace identity are separate controls',async()=>{
 });
 
 test('A channel draft opens only the supplied social profile for manual handoff',async()=>{
-  const {app,element}=await workspace();
+  const {app,element,click}=await workspace();
   app.update({state:{mode:'import',prospects:[{id:'ada',name:'Ada Okafor',company:'Green Acre',origin:'import',x_url:'https://x.com/ada'}],shortlist:['ada'],drafts:{ada:{body:'Hello Ada',subject:'Hello',channel:'x',ready:false}}}});
   app.navigate('drafts');
   const html=element('#view-content').innerHTML;
@@ -164,7 +164,7 @@ test('A sourced person enters review, never an approved or contacted list',async
 
 
 test('Live discovery immediately shows named prospects and preserves source contacts through save validation',async()=>{
-  const {app,element}=await workspace();
+  const {app,element,click}=await workspace();
   app.setCloudUser({id:'A',email:'a@example.test'});
   app.update({tab:'excluded',query:'stale filter',discovery:{search:{audience:'CEO',industry:'Software',location:'New York',limit:30}}});
   const person={id:'live-ada',name:'Ada Okafor',title:'CEO',company:'Green Acre Software',location:'New York',industry:'Software',profile_url:'https://www.linkedin.com/in/ada-okafor/',source_url:'https://www.linkedin.com/in/ada-okafor/',source_title:'Ada Okafor - CEO - Green Acre Software',source_excerpt:'CEO at a software company in New York',relevance:8,reason:'Audience: ceo · Industry: software · Location: new york',missing:[]};
@@ -175,6 +175,7 @@ test('Live discovery immediately shows named prospects and preserves source cont
   assert.equal(saved.prospects[0].profile_url,person.profile_url);assert.equal(saved.prospects[0].source_excerpt,person.source_excerpt);
   assert.equal(saved.prospects[0].signal_date,'');assert.equal(saved.prospects[0].private_verified,'no');assert.equal(saved.shortlist.length,0);
   app.applyDiscoveryResults({configured:true,people:[person],candidates:[]});assert.equal(app.get().state.prospects.length,1);
+  await click({prospect:person.id});assert.match(element('#dialog-content').innerHTML,/CEO at a software company in New York/);assert.match(element('#dialog-content').innerHTML,/Audience: ceo/);
 });
 
 test('An empty live search preserves existing prospects and shows a completed search notice',async()=>{

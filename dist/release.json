@@ -1,6 +1,6 @@
 {
   "name": "Pull GTM",
-  "release": "2026-10-10-social-review-and-identity",
+  "release": "2026-10-10-supported-live-prospect-search",
   "backend": "Supabase cyakphnpljeesotbjerz",
   "mcp": "pull-mcp v5",
   "searchAdapters": ["serper", "brave"]

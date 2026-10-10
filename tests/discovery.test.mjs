@@ -91,7 +91,7 @@ test('Serper requests use fixed endpoint and private key header with a strict re
   assert.equal(new URL(requests[0].url).origin,'https://google.serper.dev');
   assert.equal(requests[0].options.method,'POST');
   assert.equal(requests[0].options.headers['X-API-KEY'],'secret-example');
-  assert.deepEqual(JSON.parse(requests[0].options.body),{q:'Car buyers Used cars Lagos',num:30});
+  assert.deepEqual(JSON.parse(requests[0].options.body),{q:'Lagos Used cars Car buyers LinkedIn',num:30});
   assert.equal(new URL(requests[0].url).search,'');
   assert.equal(requests[0].options.redirect,'error');
   assert.equal(result.requestsUsed,1);
@@ -115,6 +115,62 @@ test('a later provider failure preserves already-retrieved people and exposes pa
   assert.equal(result.requestsUsed,2);
   assert.match(result.notice,/available results are shown/);
   assert.equal(calls,2);
+});
+
+test('free-plan query restriction uses a different supported query within the original request budget',async()=>{
+  const requests=[];
+  const transport=async(url,options)=>{
+    const body=JSON.parse(options.body);requests.push(body);
+    return requests.length===1?Response.json({message:'Query pattern not allowed for free accounts.',statusCode:400},{status:400}):Response.json({organic:[{title:'Ada Okafor — CEO at Green Soft Ltd | LinkedIn',link:'https://www.linkedin.com/in/ada-okafor',snippet:'Software · Location: New York, USA'}]});
+  };
+  const result=await discoverPrivatePages(discoveryInput({audience:'CEO',industry:'Software',location:'New York, USA',source:'LinkedIn'}),{key:'fixture',provider:'serper',maxQueries:2,transport});
+  assert.equal(requests.length,2);
+  assert.notEqual(requests[0].q,requests[1].q);
+  assert.doesNotMatch(requests[1].q,/site:|\bOR\b|[()"]|private business/);
+  assert.equal(requests[1].page,undefined);
+  assert.equal(result.people.length,1);
+  assert.equal(result.requestsUsed,2);
+  assert.equal(result.diagnostics.partial,true);
+  assert.deepEqual(result.diagnostics.failedRequests,[{code:'QUERY_RESTRICTED',status:400}]);
+});
+
+test('restricted-query fallback preserves the selected-source filter rather than silently expanding targets',async()=>{
+  let calls=0;
+  const transport=async()=>++calls===1?Response.json({message:'Query pattern not allowed for free accounts.'},{status:400}):Response.json({organic:[{title:'Ada Okafor — CEO at Green Soft Ltd',link:'https://greensoft.example/team/ada',snippet:'Software · Location: New York, USA'}]});
+  const result=await discoverPrivatePages(discoveryInput({audience:'CEO',industry:'Software',location:'New York, USA',source:'LinkedIn'}),{key:'fixture',provider:'serper',maxQueries:2,transport});
+  assert.equal(calls,2);
+  assert.equal(result.people.length,0);
+  assert.equal(result.diagnostics.missingTargetEvidence,1);
+});
+
+test('provider account failures have useful fixed messages, do not leak provider text, and never spend fallback credits',async()=>{
+  for(const [status,expected] of [[401,/key was rejected/],[403,/key was rejected/],[402,/no search credits/],[400,/rejected this query/],[429,/limit reached/],[500,/temporarily unavailable/]]){
+    let calls=0;
+    const transport=async()=>{calls++;return Response.json({message:'secret-fixture-key account specific debug text'},{status});};
+    await assert.rejects(discoverPrivatePages(discoveryInput({audience:'CEO',industry:'Software',location:'New York'}),{key:'secret-fixture-key',provider:'serper',transport}),error=>{assert.match(error.message,expected);assert.equal(error.message.includes('secret-fixture-key'),false);return true;});
+    assert.equal(calls,1);
+  }
+});
+
+test('when all bounded query alternatives are restricted, the free-plan reason is explicit',async()=>{
+  let calls=0;
+  const transport=async()=>{calls++;return Response.json({message:'Query pattern not allowed for free accounts. secret-fixture-key'},{status:400});};
+  await assert.rejects(discoverPrivatePages(discoveryInput({audience:'CEO',industry:'Software',location:'New York'}),{key:'secret-fixture-key',provider:'serper',maxQueries:2,transport}),error=>{assert.equal(error.code,'QUERY_RESTRICTED');assert.match(error.message,/free plan/);assert.equal(error.message.includes('secret-fixture-key'),false);return true;});
+  assert.equal(calls,2);
+});
+
+test('Serper uses free-account-supported plain queries first and includes real subtitle evidence',async()=>{
+  const requests=[];
+  const transport=async(url,options)=>{
+    requests.push(JSON.parse(options.body));
+    return Response.json({organic:[{title:'Ada Okafor — CEO at Green Soft Ltd | LinkedIn',subtitle:'New York, United States · Chief Executive Officer · Green Soft Ltd',link:'https://www.linkedin.com/in/ada-okafor',snippet:'Software company founder building commercial products.'}]});
+  };
+  const result=await discoverPrivatePages(discoveryInput({audience:'CEO',industry:'Software',location:'New York, USA'}),{key:'fixture',provider:'serper',maxQueries:2,transport});
+  assert.equal(result.people.length,1);
+  assert.equal(result.people[0].country,'United States');
+  assert.equal(result.people[0].location,'New York, United States');
+  assert.deepEqual(requests.map(request=>request.q),['New York USA Software CEO LinkedIn','New York USA Software CEO leadership']);
+  assert.ok(requests.every(request=>!/\bOR\b|site:|[()"]/.test(request.q)));
 });
 
 test('CEO queries expand equivalent titles and honor a selected source without forced private keywords',()=>{
@@ -232,6 +288,17 @@ test('country aliases retain the source phrase, while explicit conflicting count
   assert.equal(assessment.geography.country,'US');
   assert.equal(assessSourceRelevance({...page,description:'Software · Location: New York, Mexico'},input).missing.includes('Location'),true);
   assert.equal(assessSourceRelevance({...page,description:'Software company works with us in New York'},input).missing.includes('Location'),true,'Lowercase pronoun us does not prove US');
+});
+
+test('educational history neither converts a private executive into a public target nor supplies professional geography or industry',async()=>{
+  const row={title:'Ada Okafor - CEO at Green Soft Ltd | LinkedIn',link:'https://www.linkedin.com/in/ada-okafor',snippet:'Software · Location: Lagos, Nigeria · Education: Federal University in United States'};
+  const result=await discoverPrivatePages(discoveryInput({audience:'CEO',industry:'Software',location:'Lagos, Nigeria'}),{key:'fixture',provider:'serper',maxQueries:1,transport:async()=>Response.json({organic:[row]})});
+  assert.equal(result.people.length,1);
+  assert.equal(result.people[0].country,'Nigeria');
+  const page={title:row.title,url:row.link,description:'Location: New York · Education: Software engineering at a university in United States',source:'www.linkedin.com'};
+  const assessment=assessSourceRelevance(page,{audience:'CEO',industry:'Software',location:'New York, USA',source:''});
+  assert.ok(assessment.missing.includes('Industry or need'));
+  assert.ok(assessment.missing.includes('Location'));
 });
 
 test('paid search requires a verified owner and a successful database budget claim',async()=>{

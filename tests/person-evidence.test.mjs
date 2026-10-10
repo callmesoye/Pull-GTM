@@ -35,6 +35,41 @@ test('profile snippet supplies explicit professional role and company when title
   assert.equal(experience.title,'Founder/CEO');
 });
 
+test('real provider title forms retain an explicitly stated employer and role',()=>{
+  const comma=personFromSource(page('Tom Krause - CEO, Cloud Software Group','Currently, I serve as Chief Executive Officer at Cloud Software Group. Enterprise software businesses.', 'https://www.linkedin.com/in/thomas-h-krause'),assessment);
+  assert.equal(comma.title,'CEO');
+  assert.equal(comma.company,'Cloud Software Group');
+  const fallback=personFromSource(page('Tom Krause - CEO','Currently, I serve as Chief Executive Officer at Cloud Software Group. Enterprise software businesses.', 'https://www.linkedin.com/in/thomas-h-krause'),assessment);
+  assert.equal(fallback.company,'Cloud Software Group');
+  assert.equal(personFromSource(page('Daniel Shapero - CEO at LinkedIn'),assessment).company,'LinkedIn');
+  assert.equal(personFromSource(page('Adam Guild - Owner','Experience: Owner · Education: Harvard Business School Online'),assessment).company,'Owner');
+});
+
+test('past roles and a reported-to executive never become a current role match',()=>{
+  assert.equal(personFromSource(page('Ryan Roslansky - Former CEO of LinkedIn, EVP Microsoft','Ryan previously oversaw the group responsible for LinkedIn.'),assessment),null);
+  assert.equal(personFromSource(page('Ada Okafor - Ex-CEO at Green Acre Ltd'),assessment),null);
+  assert.equal(personFromSource(page('Ada Okafor - Former CEO at Green Acre Ltd','CEO at Green Acre Ltd from 2015 to 2020.'),assessment),null);
+  const cfo=personFromSource(page('Ada Okafor - CFO at Green Acre Ltd reporting to CEO','Software in New York'),assessment);
+  assert.equal(cfo.title,'CFO');
+  assert.equal(cfo.company,'Green Acre Ltd');
+  const missing=personFromSource(page('Ada Okafor - CFO reporting to CEO at Green Acre Ltd'),assessment);
+  assert.equal(missing.title,'CFO');
+  assert.equal(missing.company,'');
+});
+
+test('live Lagos title formats use complete employer evidence instead of roles or narrative',()=>{
+  const david=personFromSource(page('DAVID JOHNSON - MD/CEO, Realtor in real estate','Currently serving as CEO at KINTRALI HOMES, I lead a dynamic team dedicated to providing unparalleled service in the Lagos, Nigeria real estate market. · Nigeria · Realtor · KINTRALI ALLIED VENTURES','https://ng.linkedin.com/in/dada-david-833a6216b'),assessment);
+  assert.equal(david.title,'CEO');
+  assert.equal(david.company,'KINTRALI HOMES');
+  const emmanuel=personFromSource(page('Emmanuel John - CEO/ Co-Founder, Paragóne Signature ...','Emmanuel John - CEO/ Co-Founder, Paragóne Signature & Associates Ltd. Nigeria Lagos State, Nigeria 1K followers 500+ connections … a Real Estate Brokerage and ... · Lagos State, Nigeria · Chief Executive Officer · Paragone Signature & Associates Ltd','https://ng.linkedin.com/in/emmanuel-john-577a0316a'),assessment);
+  assert.equal(emmanuel.title,'CEO/ Co-Founder');
+  assert.equal(emmanuel.company,'Paragóne Signature & Associates Ltd');
+  const subtitle=personFromSource(page('Olaposi Lawore - Managing Director/CEO CARE ...','Olaposi is the Managing Director and Chief Executive Officer of CARE Properties and developments - a real estate development and consultancy company under ... · Lagos State, Nigeria · Chief Executive Officer · CARE Properties','https://ng.linkedin.com/in/olaposi-lawore-862b99113'),assessment);
+  assert.equal(subtitle.company,'CARE Properties');
+  const generic=personFromSource(page('Oludayo Sodunke - Real Estate CEO | Helping Clients Buy, ...','Oludayo Sodunke. Real Estate CEO | Helping Clients Buy, Sell & Invest with Confidence | Property Development & Investment Advisor. REAL ESTATE GENERALS NG ...'),assessment);
+  assert.equal(generic.company,'');
+});
+
 test('source identity can be screened before prospect creation and never guesses a missing employer',()=>{
   const input=page('Ada Okafor - CEO | LinkedIn','Agribusiness in Lagos');
   assert.deepEqual(parseSourceIdentity(input),{name:'Ada Okafor',title:'CEO',company:''});

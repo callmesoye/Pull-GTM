@@ -18,6 +18,7 @@ const locationGroups=[['usa','us','united states','united states of america'],['
 const countryGroups=[['Nigeria'],['United States of America','United States','USA','US','U.S.'],['United Kingdom','Great Britain','UK','U.K.'],['Canada'],['Australia'],['Mexico'],['United Arab Emirates','UAE'],['Ghana'],['Kenya'],['South Africa'],['India'],['France'],['Germany'],['Brazil'],['Spain'],['Italy'],['China'],['Japan'],['Singapore'],['New Zealand'],['Ireland'],['Netherlands'],['Sweden'],['Norway'],['Denmark'],['Finland'],['Switzerland'],['Belgium'],['Portugal'],['Pakistan'],['Bangladesh'],['Indonesia'],['Malaysia'],['Philippines'],['Egypt'],['Saudi Arabia'],['Israel'],['Turkey'],['Uganda'],['Tanzania'],['Rwanda'],['Zambia'],['Zimbabwe'],['Morocco'],['Senegal'],['Cameroon']];
 const profileHost=/(^|\.)(linkedin\.com|x\.com|twitter\.com|facebook\.com|instagram\.com)$/i;
 const strip=value=>String(value??'').trim().replace(/\s+/g,' ');
+const professionalDescription=value=>strip(value).replace(/\bEducation\s*:\s*.*?(?=\s*[·|;]|\s+\b(?:Location|Experience|Company|Employer|Connections|Followers)\s*:|$)/giu,'');
 const stopWords=new Set(['a','an','and','are','at','by','for','from','in','is','near','of','on','or','the','to','with','who','want','need','buyers','people','business','businesses','private','company','companies']);
 const singular=word=>word.length>4&&word.endsWith('ies')?word.slice(0,-3)+'y':word.length>4&&word.endsWith('s')&&!word.endsWith('ss')?word.slice(0,-1):word;
 const words=value=>[...new Set((strip(value).toLowerCase().normalize('NFKC').match(/[\p{L}\p{N}]{2,}/gu)||[]).filter(word=>!stopWords.has(word)).map(singular))];
@@ -44,7 +45,7 @@ function actualLocationTerm(text,query) {
   return aliases.map(alias=>phraseIn(text,alias)).find(Boolean)||'';
 }
 function geographicEvidence(page,query) {
-  const raw=[page.title,page.description].join(' '),label=strip(page.description).match(/\bLocation\s*:\s*([^·|;]+?)(?=\s+(?:Experience|Education|Connections|Followers)\s*:|[·|;]|$)/iu)?.[1];
+  const description=professionalDescription(page.description),raw=[page.title,description].join(' '),label=description.match(/\bLocation\s*:\s*([^·|;]+?)(?=\s+(?:Experience|Education|Connections|Followers)\s*:|[·|;]|$)/iu)?.[1];
   const excerpt=label?strip(label).replace(/\.\s+[A-Z].*$/u,'').slice(0,180):raw;
   const components=strip(query).split(',').map(strip).filter(Boolean),matches=components.map(part=>actualLocationTerm(excerpt,part));
   const requestedCountries=components.map(part=>countryGroups.find(group=>group.some(alias=>alias.toLowerCase()===part.toLowerCase()))).filter(Boolean);
@@ -54,7 +55,7 @@ function geographicEvidence(page,query) {
 }
 
 function sectorEvidence(page,identity) {
-  const text=page.title+' '+page.description;
+  const text=page.title+' '+professionalDescription(page.description);
   if(privateEvidence.test(text))return 'explicit-private-sector';
   // Institutions can be publicly owned even when their names sound commercial.
   if(identity&&ambiguousInstitution.test(identity.company))return null;
@@ -90,8 +91,35 @@ export function discoveryQueries(input) {
   return source?[base+' '+source,base+' '+source,base+' '+source]:[base,base+' site:linkedin.com/in/',base+' leadership team'];
 }
 
+function simpleDiscoveryQuery(input,{profile=false,leadership=false}={}) {
+  const source=strip(input.source),constraint=sourceConstraint(source);
+  const simpleSource=constraint?source.replace(/https?:\/\/|www\./gi,'').replace(/["():/]/g,' '):'';
+  return [input.location,input.industry,strip(input.audience).split(',')[0],simpleSource|| (profile?'LinkedIn':''),leadership?'leadership':''].filter(Boolean).join(' ').replace(/[,"():]/g,' ').replace(/\s+/g,' ').trim().slice(0,500);
+}
+
+async function searchProviderError(response) {
+  let message='';
+  // Read at most 4 KB of an error response. Never propagate provider text or keys.
+  const reader=response.body?.getReader?.();
+  if(reader){
+    const decoder=new TextDecoder();let bytes=0,text='';
+    try {
+      while(bytes<4096){const {done,value}=await reader.read();if(done)break;const chunk=value.subarray(0,4096-bytes);bytes+=chunk.length;text+=decoder.decode(chunk,{stream:true});if(bytes>=4096){await reader.cancel();break;}}
+      text+=decoder.decode();
+      try {message=String(JSON.parse(text)?.message||'');}catch{}
+    }catch{}finally{reader.releaseLock();}
+  }
+  let code='PROVIDER_UNAVAILABLE',description='Source search is temporarily unavailable.';
+  if(response.status===401||response.status===403){code='KEY_REJECTED';description='The search-provider key was rejected. Check the active key in server settings.';}
+  else if(response.status===402){code='CREDITS_EXHAUSTED';description='The search-provider account has no search credits. Add credits or replace the server key.';}
+  else if(response.status===429){code='RATE_LIMITED';description='Search limit reached. Try again later.';}
+  else if(response.status===400&&/query pattern not allowed|query.*restricted|not allowed for free accounts/i.test(message)){code='QUERY_RESTRICTED';description='The search provider restricts this query on its free plan. The supported query alternatives could not complete the search.';}
+  else if(response.status===400){code='QUERY_REJECTED';description='The search provider rejected this query. Simplify the audience, industry, location, or source.';}
+  const error=new Error(description);error.code=code;error.providerStatus=response.status;return error;
+}
+
 export function assessSourceRelevance(page,input) {
-  const text=textWords([page.title,page.description].join(' '));
+  const text=textWords([page.title,professionalDescription(page.description)].join(' '));
   const identity=parseSourceIdentity(page),geography=geographicEvidence(page,input.location);
   const dimensions=[['Audience',input.audience],['Industry or need',input.industry]];
   const matched=[],missing=[];
@@ -137,7 +165,7 @@ export function privateSourcePage(row) {
     const url=new URL(row.url);
     if(url.protocol!=='https:'||url.username||url.password||blockHost.test(url.hostname)||/\.(gov|mil|edu)(\.|$)/i.test(url.hostname))return null;
     const title=strip(row.title).slice(0,240),description=strip(row.description).slice(0,900);
-    if(!title||blockWords.test(title+' '+description+' '+url.hostname))return null;
+    if(!title||blockWords.test(title+' '+professionalDescription(description)+' '+url.hostname))return null;
     url.hash='';
     for(const key of [...url.searchParams.keys()])if(/^utm_|^(?:trk|trackingId|gclid|fbclid)$/i.test(key))url.searchParams.delete(key);
     const page={title,url:url.href,description,source:url.hostname};
@@ -152,12 +180,16 @@ export async function discoverPrivatePages(input,{key,provider='brave',maxQuerie
   if(!key)return {configured:false,candidates:[],people:[],notice:'Live prospect discovery needs a search-provider key. Your imported list and local audience review still work.'};
   if(!['brave','serper'].includes(provider))throw new Error('Choose a supported search provider in the server settings.');
   if(!Number.isInteger(maxQueries)||maxQueries<1||maxQueries>3)throw new Error('Choose a request budget between 1 and 3.');
-  const queries=discoveryQueries(input),hasSource=!!sourceConstraint(input.source);
-  const seen=new Set(),candidates=[],diagnostics={providerResults:0,duplicateSources:0,excludedSectorOrSource:0,unrelatedSources:0,missingIdentity:0,missingTargetEvidence:0,partial:false};
-  let requestsUsed=0;
+  const hasSource=!!sourceConstraint(input.source),queries=provider==='serper'?[
+    simpleDiscoveryQuery(input,{profile:true}),
+    simpleDiscoveryQuery(input,{leadership:!hasSource}),
+    simpleDiscoveryQuery(input,{profile:!hasSource})
+  ]:discoveryQueries(input);
+  const seen=new Set(),candidates=[],diagnostics={providerResults:0,duplicateSources:0,excludedSectorOrSource:0,unrelatedSources:0,missingIdentity:0,missingTargetEvidence:0,failedRequests:[],partial:false};
+  let requestsUsed=0,successfulRequests=0,restrictedError=null,fallbackPage=0;
   for(const [index,q] of queries.slice(0,maxQueries).entries()) {
     const endpoint=new URL(provider==='serper'?'https://google.serper.dev/search':'https://api.search.brave.com/res/v1/web/search');
-    const query=q.slice(0,500), count=Math.min(Math.max(input.limit,10),provider==='serper'?50:20),page=hasSource?index+1:1;
+    const query=restrictedError?simpleDiscoveryQuery({...input,source:''}):q.slice(0,500), count=Math.min(Math.max(input.limit,10),provider==='serper'?50:20),page=restrictedError?++fallbackPage:hasSource?index+1:index===2?2:1;
     if(provider==='brave'){
       endpoint.searchParams.set('q',query);
       endpoint.searchParams.set('count',String(count));
@@ -169,12 +201,15 @@ export async function discoverPrivatePages(input,{key,provider='brave',maxQuerie
     let rows;
     try {
       const response=await transport(endpoint,{method:provider==='serper'?'POST':'GET',headers,...(provider==='serper'?{body:JSON.stringify({q:query,num:count,...(page>1?{page}:{})})}:{}),signal:AbortSignal.timeout(10000),redirect:'error'});
-      if(!response.ok)throw new Error(response.status===429?'Search limit reached. Try again later.':'Source search is temporarily unavailable.');
+      if(!response.ok)throw await searchProviderError(response);
       const data=await response.json();
       const rawRows=provider==='serper'?data?.organic:data?.web?.results;
       if(rawRows!==undefined&&!Array.isArray(rawRows))throw new Error('The search provider returned an unexpected result.');
-      rows=provider==='serper'?(rawRows||[]).map(row=>({title:row?.title,url:row?.link,description:row?.snippet})):rawRows||[];
+      rows=provider==='serper'?(rawRows||[]).map(row=>({title:row?.title,url:row?.link,description:[row?.snippet,row?.subtitle].filter(value=>typeof value==='string').map(strip).join(' · ')})):rawRows||[];
+      successfulRequests++;
     }catch(error){
+      diagnostics.failedRequests.push({code:error.code||'PROVIDER_UNAVAILABLE',status:error.providerStatus||null});
+      if(error.code==='QUERY_RESTRICTED'){restrictedError=error;diagnostics.partial=true;continue;}
       // A late provider error must not erase real evidence already retrieved.
       if(!diagnostics.providerResults)throw error;
       diagnostics.partial=true;break;
@@ -190,16 +225,18 @@ export async function discoverPrivatePages(input,{key,provider='brave',maxQuerie
       else diagnostics.unrelatedSources++;
     }
   }
+  if(!successfulRequests&&restrictedError)throw restrictedError;
   candidates.sort((a,b)=>b.relevance-a.relevance||a.title.localeCompare(b.title));
   const people=[],peopleSeen=new Set();
   for(const candidate of candidates){
     const assessment=assessSourceRelevance(candidate,input),person=personFromSource(candidate,assessment);
     if(!person){diagnostics.missingIdentity++;continue;}
-    if(!matchingTerms(textWords(person.title),input.audience).length||assessment.missing.some(label=>['Audience','Industry or need','Location'].includes(label))){diagnostics.missingTargetEvidence++;continue;}
+    if(!matchingTerms(textWords(person.title),input.audience).length||assessment.missing.some(label=>['Audience','Industry or need','Location','Preferred source'].includes(label))){diagnostics.missingTargetEvidence++;continue;}
     const identity=person.name.toLowerCase()+'|'+(person.company||'').toLowerCase();
     if(peopleSeen.has(identity))continue;
     const industryTerms=assessment.matched.find(item=>item.label==='Industry or need')?.terms||[];
-    const industry=phraseIn(candidate.title+' '+candidate.description,industryTerms.join(' '))||industryTerms.join(' ');
+    const industry=phraseIn(candidate.title+' '+professionalDescription(candidate.description),industryTerms.join(' '));
+    if(!industry){diagnostics.missingTargetEvidence++;continue;}
     peopleSeen.add(identity);people.push({...person,industry,location:assessment.geography.location,country:assessment.geography.country,private_sector_basis:candidate.private_sector_basis});
   }
   people.sort((a,b)=>b.relevance-a.relevance||a.name.localeCompare(b.name));
