@@ -21,8 +21,8 @@ begin
     raise exception 'Invalid request budget' using errcode = '22023';
   end if;
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('pull_search:' || today::text, 0));
-  if coalesce((select requests from pull_private.search_daily_usage where day=today and owner=owner_id::text),0) + p_requests > 20
-    or coalesce((select requests from pull_private.search_daily_usage where day=today and owner='project'),0) + p_requests > 200 then
+  if coalesce((select requests from pull_private.search_daily_usage where day=today and owner=owner_id::text),0) + p_requests > 100
+    or coalesce((select requests from pull_private.search_daily_usage where day=today and owner='project'),0) + p_requests > 500 then
     return false;
   end if;
   insert into pull_private.search_daily_usage(day,owner,requests)
