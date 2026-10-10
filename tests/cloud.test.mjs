@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {AccountGuard} from '../dist/cloud.js';
+import {AccountGuard,cloudRequest} from '../dist/cloud.js';
 test('A temporary outage invalidates old requests while retaining the known account',()=>{
   const guard=new AccountGuard();guard.set({id:'A'});const before=guard.ticket();guard.suspend();
   assert.equal(guard.user.id,'A');assert.equal(guard.current(before),false);assert.equal(guard.set({id:'A'}),false);assert.equal(guard.current(guard.ticket()),true);
@@ -38,4 +38,11 @@ test('Account invalidation permanently rejects earlier operation tickets',()=>{
   assert.throws(()=>guard.ticket(),/Sign in/);
   guard.set({id:'A'});
   assert.equal(guard.current(pendingSave),false);
+});
+
+
+test('A hung discovery request settles with a useful timeout and aborts its network request',async()=>{
+  const original=globalThis.fetch;let aborted=false;
+  globalThis.fetch=(_url,options)=>new Promise((_resolve,reject)=>options.signal.addEventListener('abort',()=>{aborted=true;reject(new DOMException('Aborted','AbortError'));},{once:true}));
+  try{await assert.rejects(cloudRequest('discovery',{audience:'CEO'},'A',{timeoutMs:5}),/search timed out/);assert.equal(aborted,true);}finally{globalThis.fetch=original;}
 });

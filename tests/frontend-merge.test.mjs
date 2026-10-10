@@ -23,7 +23,7 @@ async function workspace() {
   const document={body:{dataset:{}},querySelector:element,querySelectorAll:()=>[],addEventListener(name,fn){events.set(name,[...(events.get(name)||[]),fn]);}};
   const location={hash:'',protocol:'https:',pathname:'/',search:''};
   const context={...engine,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
-  vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,visibleRows,guideItems,render,aiContext,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData}),update:changes=>{if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
+  vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData}),update:changes=>{if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
   return {app:context.testApp,element,location,calls,hash:()=>windowEvents.get('hashchange')(),click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
 }
@@ -104,13 +104,13 @@ test('Switching accounts clears AI messages, tokens, profiles and workflows',asy
   const current=app.get();
   current.assistantState.messages.push({role:'user',content:'Private context'});
   current.agentState.oneTime={token:'private-token'};
-  current.automationData.workflows.push({id:'private-workflow'});
+  current.automationData.workflows.push({id:'private-workflow'});current.discovery.people.push({id:'private-search-result'});current.discovery.search.audience='Private search audience';
   app.setCloudUser({id:'B',email:'b@example.test'});
   const next=app.get();
   assert.equal(next.assistantState.messages.length,0);
   assert.equal(next.agentState.oneTime,null);
   assert.equal(next.automationData.workflows.length,0);
-  assert.equal(next.profile,null);
+  assert.equal(next.profile,null);assert.equal(next.discovery.people.length,0);assert.equal(next.discovery.search.audience,'');
   assert.ok(calls.includes('account:B'),'Connect receives the new account, not stale account state');
 });
 
@@ -160,4 +160,34 @@ test('A sourced person enters review, never an approved or contacted list',async
   assert.equal(saved.shortlist.length,0);
   assert.equal(engine.qualify(saved.prospects[0],saved.rules).status,'review');
   assert.doesNotThrow(()=>validateWorkspace(saved));
+});
+
+
+test('Live discovery immediately shows named prospects and preserves source contacts through save validation',async()=>{
+  const {app,element}=await workspace();
+  app.setCloudUser({id:'A',email:'a@example.test'});
+  app.update({tab:'excluded',query:'stale filter',discovery:{search:{audience:'CEO',industry:'Software',location:'New York',limit:30}}});
+  const person={id:'live-ada',name:'Ada Okafor',title:'CEO',company:'Green Acre Software',location:'New York',industry:'Software',profile_url:'https://www.linkedin.com/in/ada-okafor/',source_url:'https://www.linkedin.com/in/ada-okafor/',source_title:'Ada Okafor - CEO - Green Acre Software',source_excerpt:'CEO at a software company in New York',relevance:8,reason:'Audience: ceo · Industry: software · Location: new york',missing:[]};
+  app.applyDiscoveryResults({configured:true,people:[person],candidates:[],notice:'1 prospect found'});app.navigate('prospects');
+  assert.equal(app.get().tab,'all');assert.equal(app.get().query,'');assert.equal(app.visibleRows().length,1);
+  assert.match(element('#view-content').innerHTML,/Ada Okafor/);assert.match(element('#view-content').innerHTML,/New York/);
+  const saved=validateWorkspace(app.get().state);
+  assert.equal(saved.prospects[0].profile_url,person.profile_url);assert.equal(saved.prospects[0].source_excerpt,person.source_excerpt);
+  assert.equal(saved.prospects[0].signal_date,'');assert.equal(saved.prospects[0].private_verified,'no');assert.equal(saved.shortlist.length,0);
+  app.applyDiscoveryResults({configured:true,people:[person],candidates:[]});assert.equal(app.get().state.prospects.length,1);
+});
+
+test('An empty live search preserves existing prospects and shows a completed search notice',async()=>{
+  const {app}=await workspace();
+  app.update({state:{prospects:[{id:'kept',name:'Kept Person',company:'Kept Company',origin:'import',suppressed:false}],mode:'import'}});
+  app.applyDiscoveryResults({configured:true,people:[],candidates:[],notice:'No matching prospects'});
+  assert.equal(app.get().state.prospects[0].id,'kept');assert.equal(app.get().discovery.searched,true);assert.equal(app.get().discovery.notice,'No matching prospects');
+});
+
+test('A repeated discovery ID keeps one valid record and preserves reviewed choices when an employer changes',async()=>{
+  const {app}=await workspace();
+  app.update({state:{mode:'import',prospects:[{id:'source-ada',name:'Ada Okafor',title:'CEO',company:'Green Acre',source_url:'https://example.test/ada',origin:'discovery',suppressed:true,private_verified:'yes'}],shortlist:['source-ada']}});
+  app.applyDiscoveryResults({configured:true,people:[{id:'source-ada',name:'Ada Okafor',title:'CEO',company:'New Acre',source_url:'https://example.test/ada',reason:'CEO in software'}]});
+  const saved=validateWorkspace(app.get().state);
+  assert.equal(saved.prospects.length,1);assert.equal(saved.prospects[0].company,'Green Acre');assert.equal(saved.prospects[0].suppressed,true);assert.equal(saved.prospects[0].private_verified,'yes');assert.ok(saved.prospects[0].conflicts.includes('company'));assert.equal(saved.shortlist[0],'source-ada');
 });
