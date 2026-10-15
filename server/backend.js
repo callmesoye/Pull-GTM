@@ -185,13 +185,19 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       if(request.method==='GET') {
         const {data,error}=await db.select('payload,revision,updated_at').eq('user_id',user.id).maybeSingle();
         if(error)return reply(503,{error:'Cloud workspace is unavailable. Your local work is safe.'});
-        return reply(200,{workspace:data?{...data,payload:validateWorkspace(data.payload)}:null});
+        return reply(200,{workspace:data?{...data,payload:validateWorkspace(data.payload,{now:now()})}:null});
       }
-      let payload;
-      try{payload=validateWorkspace(body.workspace);}catch(e){return reply(400,{error:e.message});}
       const revision=body.revision;
       if(!Number.isSafeInteger(revision)||revision<0||revision===Number.MAX_SAFE_INTEGER)return reply(400,{error:'Load your cloud workspace before saving.'});
-      const row={user_id:user.id,payload,revision:revision+1,updated_at:now().toISOString()};
+      // Normalize against this account's saved state so a replacement list or an
+      // older client cannot erase contact preferences. The final revision filter
+      // still protects against a save made after this read.
+      const stored=await db.select('payload,revision').eq('user_id',user.id).maybeSingle();
+      if(stored.error)return reply(503,{error:'Cloud workspace is unavailable. Your local work is safe.'});
+      if((stored.data?.revision??0)!==revision)return reply(409,{error:'A newer cloud save exists. Download a backup, then load that version before saving.'});
+      const at=now();let payload;
+      try{payload=validateWorkspace(body.workspace,{previous:stored.data?.payload,now:at});}catch(e){return reply(400,{error:e.message});}
+      const row={user_id:user.id,payload,revision:revision+1,updated_at:at.toISOString()};
       const result=revision===0?await db.insert(row).select('revision,updated_at').single():await db.update(row).eq('user_id',user.id).eq('revision',revision).select('revision,updated_at').maybeSingle();
       if(result.error?.code==='23505'||(!result.error&&!result.data))return reply(409,{error:'A newer cloud save exists. Download a backup, then load that version before saving.'});
       if(result.error)return reply(503,{error:'Could not save to the cloud. Your local work is safe.'});

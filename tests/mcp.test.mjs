@@ -6,7 +6,7 @@ import {createAgentStore} from '../supabase/functions/pull-mcp/store.js';
 
 const now=new Date('2026-10-08T12:00:00Z');
 const raw='pull_agent_'+'A'.repeat(43);
-const prospect=(id='A-good',extra={})=>({id,name:'Example Owner',title:'Founder',company:'Example Company',country:'Nigeria',industry:'Retail',signal:'Expanding locations',signal_date:'2026-10-07',source_url:'https://example.test/supplied-evidence',email:'private@example.test',origin:'import',...extra});
+const prospect=(id='A-good',extra={})=>({id,private_verified:'yes',name:'Example Owner',title:'Founder',company:'Example Company',country:'Nigeria',industry:'Retail',signal:'Expanding locations',signal_date:'2026-10-07',source_url:'https://example.test/supplied-evidence',email:'private@example.test',origin:'import',...extra});
 const payload=()=>({version:1,identity:'Example Business',context:'company',offer:'Inventory support',website:'https://example.test',prospects:[prospect(),prospect('A-unreviewed'),prospect('A-excluded',{title:'Student'}),prospect('A-stale',{signal_date:'2020-01-01'}),prospect('A-suppressed',{suppressed:true})],shortlist:['A-good','A-excluded','A-stale','A-suppressed'],drafts:{},audit:[],mode:'import',rules:{roles:'Founder',industries:'Retail',countries:'Nigeria',min:'',max:'',signals:'',evidence:true,days:'90'}});
 const rpc=(method,params={},id=1)=>({jsonrpc:'2.0',id,method,params});
 const request=(body,{method='POST',origin,authorization='Bearer '+raw,accept='application/json, text/event-stream',type='application/json',protocol}={})=>new Request('https://project.supabase.co/functions/v1/pull-mcp',{method,headers:{Authorization:authorization,Accept:accept,'Content-Type':type,...(origin===undefined?{}:{Origin:origin}),...(protocol?{'MCP-Protocol-Version':protocol}:{})},body:method==='POST'?(typeof body==='string'?body:JSON.stringify(body)):undefined});
@@ -36,6 +36,12 @@ const invoke=async(f,name,args={})=>{
   const response=await f.handler(request(rpc('tools/call',{name,arguments:args})));return {response,message:await response.json()};
 };
 const proposed=extra=>({prospectId:'A-good',expectedRevision:3,subject:'A helpful conversation',body:'A draft supplied by the agent.',channel:'company',...extra});
+
+test('A ledger-only do-not-contact choice blocks agent reads and draft proposals',async()=>{
+  const f=await fixture();const saved=f.rows.get('ownerA');saved.payload.suppressions=['email:private@example.test'];
+  const listed=await invoke(f,'list_reviewed_prospects');assert.equal(JSON.parse(listed.message.result.content[0].text).total,0);
+  const draft=await invoke(f,'propose_draft',proposed());assert.equal(draft.message.result.isError,true);assert.ok(!f.calls.some(call=>call[0]==='commit'));
+});
 
 test('MCP initializes without exposing authentication material and accepts notifications with 202',async()=>{
   const f=await fixture();const response=await f.handler(request(rpc('initialize',{protocolVersion:'2025-06-18',capabilities:{},clientInfo:{name:'QA',version:'1'}})));

@@ -10,9 +10,9 @@ const WA='11111111-1111-4111-8111-111111111111',WB='22222222-2222-4222-8222-2222
 const at='2026-10-08T18:00:00.000Z';
 const workflow=(id=WA,owner=A,kind='audience_review',trigger='manual')=>({id,user_id:owner,name:'Useful workflow',kind,trigger,enabled:true,archived:false,created_at:at,updated_at:at});
 const workspace=()=>({version:1,prospects:[
-  {id:'p1',name:'Ada',title:'Founder',company:'Example',industry:'SaaS',country:'Nigeria',signal:'Hiring',signal_date:'2026-10-05',source_url:'https://example.test/hiring',suppressed:false},
-  {id:'p2',name:'Ben',title:'Founder',company:'Example two',industry:'SaaS',signal:'',source_url:'',signal_date:''},
-  {id:'p3',name:'Chao',title:'Founder',company:'Example three',industry:'SaaS',signal:'Hiring',signal_date:'2026-10-05',source_url:'https://example.test/hiring',suppressed:true},
+  {id:'p1',private_verified:'yes',name:'Ada',title:'Founder',company:'Example',industry:'SaaS',country:'Nigeria',signal:'Hiring',signal_date:'2026-10-05',source_url:'https://example.test/hiring',suppressed:false},
+  {id:'p2',private_verified:'yes',name:'Ben',title:'Founder',company:'Example two',industry:'SaaS',signal:'',source_url:'',signal_date:''},
+  {id:'p3',private_verified:'yes',name:'Chao',title:'Founder',company:'Example three',industry:'SaaS',signal:'Hiring',signal_date:'2026-10-05',source_url:'https://example.test/hiring',suppressed:true},
 ],shortlist:['p1','p2','p3'],drafts:{},audit:[],mode:'import',identity:'Pull',context:'company',website:'',offer:'Help reviewing prospects',setup:true,duplicates:0,rules:{roles:'Founder',industries:'SaaS',countries:'',min:'',max:'',signals:'',days:'90',evidence:true}});
 const request=(body,{user=A,account=user,origin='https://pull.example',cookie,method}={})=>new Request('https://pull.example/api/automations',{method:method||(body===undefined?'GET':'POST'),headers:{Origin:origin,'Content-Type':'application/json',Cookie:cookie??(user?'__Host-pull-access=valid-'+user+'; __Host-pull-refresh=refresh-'+user:''),...(account?{'X-Pull-Account':account}:{})},body:body===undefined?undefined:JSON.stringify(body)});
 
@@ -55,9 +55,9 @@ function fixture({anonymous=false,outage=false,conflict='',refreshStatus=0}={}) 
   return {backend,workflows,rows,runs,calls};
 }
 
-test('Audience review reports fit without approving or replacing user decisions',()=>{
+test('Audience review reports fit and retains only currently eligible approvals',()=>{
   const original=workspace(),result=applyAutomation(workflow(),original,new Date(at));
-  assert.deepEqual(result.payload.shortlist,original.shortlist);assert.deepEqual(result.payload.drafts,{});assert.deepEqual(result.payload.prospects,original.prospects);
+  assert.deepEqual(result.payload.shortlist,['p1']);assert.deepEqual(result.payload.drafts,{});assert.deepEqual(result.payload.prospects,original.prospects.map(p=>({...p,suppressed:p.suppressed===true})));
   assert.equal(result.counts.matches,1);assert.equal(result.counts.needs_evidence,1);assert.equal(result.counts.excluded,1);assert.equal(original.audit.length,0);assert.equal(result.payload.audit.length,1);
 });
 

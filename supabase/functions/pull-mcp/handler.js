@@ -1,4 +1,4 @@
-import {qualify,safeUrl} from './engine.js';
+import {qualify,safeUrl,applySuppressionLedger,recordFingerprint} from './engine.js';
 
 const PROTOCOLS=['2025-06-18','2025-03-26'];
 const MAX_REQUEST_BYTES=65536;
@@ -27,7 +27,7 @@ function workspacePayload(row,owner){
 }
 function audience(rules){return Object.fromEntries(['roles','industries','countries','min','max','signals','days','evidence'].map(k=>[k,k==='evidence'?rules[k]===true:text(rules[k],1000)]));}
 function eligible(p,now){
-  return p.prospects.filter(record=>object(record)&&p.shortlist.includes(record.id)&&!record.suppressed).map(record=>qualify(record,p.rules,now)).filter(record=>record.status==='fit');
+  return applySuppressionLedger(p.prospects,p.suppressions).filter(record=>object(record)&&p.shortlist.includes(record.id)&&!record.suppressed&&(!record.review_key||record.review_key===recordFingerprint(record))).map(record=>qualify(record,p.rules,now)).filter(record=>record.status==='fit');
 }
 function exposedProspect(p){
   return {...Object.fromEntries(['id','name','title','company','industry','country','signal','signal_date','origin'].map(k=>[k,text(p[k],k==='signal'?2000:500)])),source_url:safeUrl(p.source_url),reviewed:true,evidenceStatus:'Supplied by the owner; not independently verified'};

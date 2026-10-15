@@ -128,7 +128,7 @@ test('Account avatar and workspace identity are separate controls',async()=>{
 
 test('A channel draft opens only the supplied social profile for manual handoff',async()=>{
   const {app,element,click}=await workspace();
-  app.update({state:{mode:'import',prospects:[{id:'ada',name:'Ada Okafor',company:'Green Acre',origin:'import',x_url:'https://x.com/ada'}],shortlist:['ada'],drafts:{ada:{body:'Hello Ada',subject:'Hello',channel:'x',ready:false}}}});
+  app.update({state:{mode:'import',prospects:[{id:'ada',name:'Ada Okafor',title:'Founder',company:'Green Acre',origin:'import',private_verified:'yes',x_url:'https://x.com/ada'}],rules:{...app.get().state.rules,roles:'Founder',evidence:false},shortlist:['ada'],drafts:{ada:{body:'Hello Ada',subject:'Hello',channel:'x',ready:false}}}});
   app.navigate('drafts');
   const html=element('#view-content').innerHTML;
   assert.match(html,/X · manual handoff/);
@@ -185,10 +185,44 @@ test('An empty live search preserves existing prospects and shows a completed se
   assert.equal(app.get().state.prospects[0].id,'kept');assert.equal(app.get().discovery.searched,true);assert.equal(app.get().discovery.notice,'No matching prospects');
 });
 
-test('A repeated discovery ID keeps one valid record and preserves reviewed choices when an employer changes',async()=>{
+test('A repeated discovery preserves suppression and invalidates approvals after an employer conflict',async()=>{
   const {app}=await workspace();
   app.update({state:{mode:'import',prospects:[{id:'source-ada',name:'Ada Okafor',title:'CEO',company:'Green Acre',source_url:'https://example.test/ada',origin:'discovery',suppressed:true,private_verified:'yes'}],shortlist:['source-ada']}});
   app.applyDiscoveryResults({configured:true,people:[{id:'source-ada',name:'Ada Okafor',title:'CEO',company:'New Acre',source_url:'https://example.test/ada',reason:'CEO in software'}]});
   const saved=validateWorkspace(app.get().state);
-  assert.equal(saved.prospects.length,1);assert.equal(saved.prospects[0].company,'Green Acre');assert.equal(saved.prospects[0].suppressed,true);assert.equal(saved.prospects[0].private_verified,'yes');assert.ok(saved.prospects[0].conflicts.includes('company'));assert.equal(saved.shortlist[0],'source-ada');
+  assert.equal(saved.prospects.length,1);assert.equal(saved.prospects[0].company,'Green Acre');assert.equal(saved.prospects[0].suppressed,true);assert.equal(saved.prospects[0].private_verified,'yes');assert.ok(saved.prospects[0].conflicts.includes('company'));assert.equal(saved.shortlist.length,0);
+});
+
+test('Replacing a CSV and clearing its rows preserve do-not-contact decisions',async()=>{
+  const {app,element,click,import:importCSV}=await workspace();
+  app.update({state:{mode:'import',prospects:[{id:'old',name:'Ada Okafor',company:'Green Acre',email:'ada@example.test',origin:'import'}]}});
+  await click({suppress:'old'});
+  await importCSV('Name,Company,Email\nAda Okafor,Green Acre,ada@example.test');
+  element('#apply-import').events.get('click')();
+  assert.equal(app.get().state.prospects[0].suppressed,true);
+  assert.ok(app.get().state.suppressions.includes('email:ada@example.test'));
+  await click({action:'confirm-reset'});
+  assert.equal(app.get().state.prospects.length,0);assert.ok(app.get().state.suppressions.includes('email:ada@example.test'));
+});
+
+test('Imported records expose the same correction form and malformed conflicts remain repairable',async()=>{
+  const {app,element,click}=await workspace();
+  app.update({state:{mode:'import',prospects:[{id:'ada',name:'Ada Okafor',company:'Green Acre',origin:'import',conflicts:['company'],conflict_details:'{"company":"not-an-array"}'}]}});
+  await click({prospect:'ada'});
+  const form=element('#dialog-content .dialog-body').innerHTML;
+  assert.match(form,/name="name"/);assert.match(form,/name="company"/);assert.match(form,/name="source_url"/);assert.match(form,/name="resolve_conflicts"/);
+});
+
+test('A stale shortlist cannot prepare a draft or expose a social handoff',async()=>{
+  const {app,element,click}=await workspace();
+  app.update({state:{mode:'import',prospects:[{id:'ada',name:'Ada Okafor',company:'Green Acre',origin:'import',private_verified:'no',x_url:'https://x.com/ada'}],shortlist:['ada'],drafts:{ada:{subject:'Hello',body:'Preserve my draft',channel:'x',ready:true}}}});
+  await click({prepare:'ada'});assert.equal(app.get().state.drafts.ada.ready,false);
+  app.navigate('drafts');assert.doesNotMatch(element('#view-content').innerHTML,/href="https:\/\/x.com\/ada"/);assert.equal(app.get().state.drafts.ada.body,'Preserve my draft');
+});
+
+test('Search progress reports the requested count and its shortfall without placeholder rows',async()=>{
+  const {app,element}=await workspace();
+  app.applyDiscoveryResults({configured:true,people:[],candidates:[],target:{requested:30,returned:0,remaining:30,status:'empty',reason:'request_budget_reached'},notice:'No qualifying people yet'});
+  app.navigate('prospects');const html=element('#view-content').innerHTML;
+  assert.match(html,/0 of 30 requested prospects found/);assert.match(html,/30 still needed/);assert.doesNotMatch(html,/Unnamed prospect/);
 });

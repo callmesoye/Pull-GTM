@@ -4,12 +4,14 @@ import {parseCSV, deduplicate, qualify, csvExport, draftFor} from '../dist/engin
 
 const now = new Date('2026-10-08T12:00:00Z');
 const rules = {roles:'CEO', industries:'SaaS', countries:'', min:'', max:'', signals:'', evidence:true, days:'90'};
-const complete = {name:'Ada Example', company:'Example, Inc.', email:'ada@example.test', title:'CEO', industry:'SaaS', country:'Nigeria', employees:'20', signal:'Hiring a growth team\nNew position open', signal_date:'2026-10-01', source_url:'https://example.test/jobs', profile_url:'https://example.test/ada', suppressed:false};
+const complete = {private_verified:'yes',name:'Ada Example', company:'Example, Inc.', email:'ada@example.test', title:'CEO', industry:'SaaS', country:'Nigeria', employees:'20', signal:'Hiring a growth team\nNew position open', signal_date:'2026-10-01', source_url:'https://example.test/jobs', profile_url:'https://example.test/ada', suppressed:false};
 
 test('Import, qualify, draft and export preserve the selected prospect and editable message', () => {
   const fields = Object.keys(complete);
   const imported = deduplicate(parseCSV(csvExport([complete], fields))).prospects;
   assert.equal(imported.length, 1);
+  assert.equal(qualify(imported[0],rules,now).status,'review','imported claims require owner review');
+  imported[0].private_verified='yes';
   const prospect = qualify(imported[0], rules, now);
   assert.equal(prospect.status, 'fit');
   const message = draftFor(prospect, 'make buyer research faster', 'Pull GTM') + '\n\nA personal note, "in my voice".';

@@ -1,4 +1,5 @@
 import {personFromSource,parseSourceIdentity} from './person-evidence.js';
+import {canonicalProfile} from '../dist/prospect-records.js';
 
 const blockHost=/(^|\.)(gov|gouv|gc|go|edu|ac|mil)\.[a-z.]+$/i;
 const blockWords=/\b(government|ministry|public university|state university|federal university|public school|public institution|state-owned|government-owned|civil service|regulator|commission|registry|parliament|municipal|council|national assembly)\b/i;
@@ -77,6 +78,24 @@ function sourceConstraint(value) {
   try {const url=new URL(source.includes('://')?source:'https://'+source);if(/^[\w.-]+\.[a-z]{2,}$/i.test(url.hostname))return 'site:'+url.hostname+url.pathname.replace(/\/$/,'');}catch{}
   return source.replace(/["()]/g,'');
 }
+function matchesSourceSite(value,site) {
+  try {
+    const actual=new URL(value),expected=new URL('https://'+site),host=actual.hostname.toLowerCase().replace(/\.$/,''),wanted=expected.hostname.toLowerCase().replace(/\.$/,'');
+    if(!['https:','http:'].includes(actual.protocol)||actual.username||actual.password||!(host===wanted||host.endsWith('.'+wanted)))return false;
+    const path=expected.pathname.replace(/\/$/,'');
+    return !path||actual.pathname===path||actual.pathname.startsWith(path+'/');
+  }catch{return false;}
+}
+function matchesPreferredSource(page,value) {
+  return strip(value).split(',').some(part=>{
+    const constraint=sourceConstraint(part),source=strip(part).toLowerCase();
+    if(!constraint)return false;
+    const sites=[...constraint.matchAll(/site:([^\s)]+)/g)].map(match=>match[1]);
+    if(sites.length)return sites.some(site=>matchesSourceSite(page.url,site));
+    if(/^email|^e-mail/.test(source))return /[\w.+-]+@[\w.-]+\.[a-z]{2,}/i.test(page.description);
+    return [page.source,page.title,page.description].some(value=>String(value).toLowerCase().includes(source));
+  });
+}
 function audienceQuery(value) {
   const aliases=[];
   for(const part of strip(value).split(',')){
@@ -129,8 +148,7 @@ export function assessSourceRelevance(page,input) {
   }
   if(geography.eligible)matched.push({label:'Location',terms:geography.matches});else missing.push('Location');
   const constraint=sourceConstraint(input.source),source=constraint?strip(input.source).toLowerCase():'';
-  const sourceSites=[...constraint.matchAll(/site:([^\s)]+)/g)].map(match=>match[1]);
-  const sourceMatched=source&&(sourceSites.length?sourceSites.some(site=>page.url?.includes(site)):/^email|^e-mail/.test(source)?/[\w.+-]+@[\w.-]+\.[a-z]{2,}/i.test(page.description):[page.source,page.title,page.description].some(value=>String(value).toLowerCase().includes(source)));
+  const sourceMatched=Boolean(source&&matchesPreferredSource(page,input.source));
   if(source&&sourceMatched)matched.push({label:'Preferred source',terms:[source]});
   if(source&&!sourceMatched)missing.push('Preferred source');
   const topic=matched.some(item=>item.label==='Audience'||item.label==='Industry or need');
@@ -176,71 +194,131 @@ export function privateSourcePage(row) {
   }catch{return null;}
 }
 
+// Used while retrieving and when assembling the result: progress counts only
+// named people who satisfy the original filters, never topical source pages.
+function personEvidence(candidate,input,assessment) {
+  const person=personFromSource(candidate,assessment);
+  if(!person)return {diagnostic:'missingIdentity'};
+  if(!matchingTerms(textWords(person.title),input.audience).length||assessment.missing.some(label=>['Audience','Industry or need','Location','Preferred source'].includes(label)))return {diagnostic:'missingTargetEvidence'};
+  const industryTerms=assessment.matched.find(item=>item.label==='Industry or need')?.terms||[];
+  const industry=phraseIn(candidate.title+' '+professionalDescription(candidate.description),industryTerms.join(' '));
+  if(!industry)return {diagnostic:'missingTargetEvidence'};
+  return {person:{...person,industry,location:assessment.geography.location,country:assessment.geography.country,private_sector_basis:candidate.private_sector_basis}};
+}
+
+function personKeys(person) {
+  const employer=strip(person.company).normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').replace(/\b(?:ltd|limited|llc|inc|incorporated|corp|corporation)\b/g,'').replace(/\s+/g,' ').trim();
+  const name='name:'+strip(person.name).normalize('NFKC').toLowerCase()+'|'+employer;
+  const profiles=[...new Set(['profile_url','linkedin_url','x_url','instagram_url','facebook_url'].map(field=>canonicalProfile(person[field])).filter(Boolean).map(url=>'profile:'+url))];
+  return {name,profiles};
+}
+
+function indexPerson(person,index) {
+  const keys=personKeys(person),profileMatches=new Set(keys.profiles.flatMap(key=>[...(index.get(key)||[])])),nameMatches=index.get(keys.name)||new Set();
+  // Multiple profile owners or an unnamed profile choice cannot establish a
+  // new unique person. Keep their source candidate for review without counting.
+  if(profileMatches.size>1||!keys.profiles.length&&nameMatches.size>1)return 'ambiguous';
+  let existing=[...profileMatches][0];
+  if(!existing&&nameMatches.size===1){
+    const candidate=[...nameMatches][0];
+    // Two distinct stated profiles can belong to same-name coworkers. A name
+    // fallback is usable only when one side has no profile and is unambiguous.
+    if(!keys.profiles.length||!candidate.profiles.size)existing=candidate;
+  }
+  const entry=existing||{profiles:new Set()};
+  for(const key of [keys.name,...keys.profiles]){
+    if(!index.has(key))index.set(key,new Set());index.get(key).add(entry);
+  }
+  keys.profiles.forEach(key=>entry.profiles.add(key));
+  // Register aliases even when the same profile reports another name/employer;
+  // that evidence never adds a second count for an already-seen profile.
+  return existing?'duplicate':'added';
+}
+
+function retrievalQueries(input,provider) {
+  const hasSource=Boolean(sourceConstraint(input.source));
+  const sources=hasSource?strip(input.source).split(',').map(strip).filter(Boolean):[];
+  const queries=hasSource?sources.map(source=>provider==='serper'?simpleDiscoveryQuery({...input,source}):discoveryQueries({...input,source})[0]):provider==='serper'?[
+    simpleDiscoveryQuery(input,{profile:true}),simpleDiscoveryQuery(input,{leadership:true}),simpleDiscoveryQuery(input)
+  ]:discoveryQueries(input);
+  return [...new Set(queries.map(query=>query.slice(0,500)))].map(query=>({query,page:1,exhausted:false,seen:new Set()}));
+}
+
 export async function discoverPrivatePages(input,{key,provider='brave',maxQueries=2,transport=fetch}={}) {
   if(!key)return {configured:false,candidates:[],people:[],notice:'Live prospect discovery needs a search-provider key. Your imported list and local audience review still work.'};
   if(!['brave','serper'].includes(provider))throw new Error('Choose a supported search provider in the server settings.');
   if(!Number.isInteger(maxQueries)||maxQueries<1||maxQueries>3)throw new Error('Choose a request budget between 1 and 3.');
-  const hasSource=!!sourceConstraint(input.source),queries=provider==='serper'?[
-    simpleDiscoveryQuery(input,{profile:true}),
-    simpleDiscoveryQuery(input,{leadership:!hasSource}),
-    simpleDiscoveryQuery(input,{profile:!hasSource})
-  ]:discoveryQueries(input);
-  const seen=new Set(),candidates=[],diagnostics={providerResults:0,duplicateSources:0,excludedSectorOrSource:0,unrelatedSources:0,missingIdentity:0,missingTargetEvidence:0,failedRequests:[],partial:false};
-  let requestsUsed=0,successfulRequests=0,restrictedError=null,fallbackPage=0;
-  for(const [index,q] of queries.slice(0,maxQueries).entries()) {
-    const endpoint=new URL(provider==='serper'?'https://google.serper.dev/search':'https://api.search.brave.com/res/v1/web/search');
-    const query=restrictedError?simpleDiscoveryQuery({...input,source:''}):q.slice(0,500), count=Math.min(Math.max(input.limit,10),provider==='serper'?50:20),page=restrictedError?++fallbackPage:hasSource?index+1:index===2?2:1;
+  const hasSource=Boolean(sourceConstraint(input.source)),queries=retrievalQueries(input,provider);
+  // Keep the page size stable so provider pagination does not overlap or skip
+  // results when the number of still-needed people changes between requests.
+  const count=Math.min(Math.max(input.limit*3,10),provider==='serper'?50:20);
+  const seen=new Set(),peopleIndex=new Map(),candidates=[],people=[],attempted=new Set();
+  const diagnostics={providerResults:0,duplicateSources:0,duplicatePeople:0,ambiguousIdentity:0,excludedSectorOrSource:0,unrelatedSources:0,missingIdentity:0,missingTargetEvidence:0,failedRequests:[],partial:false};
+  let requestsUsed=0,successfulRequests=0,restrictedError=null,active=queries[0],providerFailure=false;
+  const nextQuery=()=>queries.find(query=>!query.exhausted&&!attempted.has(query.query+'|'+query.page));
+  while(active&&requestsUsed<maxQueries&&people.length<input.limit) {
+    const {query,page}=active,endpoint=new URL(provider==='serper'?'https://google.serper.dev/search':'https://api.search.brave.com/res/v1/web/search');
     if(provider==='brave'){
-      endpoint.searchParams.set('q',query);
-      endpoint.searchParams.set('count',String(count));
-      endpoint.searchParams.set('safesearch','strict');
+      endpoint.searchParams.set('q',query);endpoint.searchParams.set('count',String(count));endpoint.searchParams.set('safesearch','strict');
       if(page>1)endpoint.searchParams.set('offset',String(page-1));
     }
     const headers=provider==='serper'?{'X-API-KEY':key,'Content-Type':'application/json','Accept':'application/json'}:{'X-Subscription-Token':key,'Accept':'application/json'};
-    requestsUsed++;
-    let rows;
+    attempted.add(query+'|'+page);requestsUsed++;
+    let rows,moreResults;
     try {
       const response=await transport(endpoint,{method:provider==='serper'?'POST':'GET',headers,...(provider==='serper'?{body:JSON.stringify({q:query,num:count,...(page>1?{page}:{})})}:{}),signal:AbortSignal.timeout(10000),redirect:'error'});
       if(!response.ok)throw await searchProviderError(response);
-      const data=await response.json();
-      const rawRows=provider==='serper'?data?.organic:data?.web?.results;
+      const data=await response.json(),rawRows=provider==='serper'?data?.organic:data?.web?.results;
       if(rawRows!==undefined&&!Array.isArray(rawRows))throw new Error('The search provider returned an unexpected result.');
       rows=provider==='serper'?(rawRows||[]).map(row=>({title:row?.title,url:row?.link,description:[row?.snippet,row?.subtitle].filter(value=>typeof value==='string').map(strip).join(' · ')})):rawRows||[];
+      moreResults=provider==='brave'?data?.query?.more_results_available:undefined;
       successfulRequests++;
     }catch(error){
       diagnostics.failedRequests.push({code:error.code||'PROVIDER_UNAVAILABLE',status:error.providerStatus||null});
-      if(error.code==='QUERY_RESTRICTED'){restrictedError=error;diagnostics.partial=true;continue;}
-      // A late provider error must not erase real evidence already retrieved.
+      if(error.code==='QUERY_RESTRICTED'){
+        restrictedError=error;diagnostics.partial=true;active.exhausted=true;
+        const fallback=[simpleDiscoveryQuery({...input,source:''}),simpleDiscoveryQuery({...input,source:''},{leadership:true}),simpleDiscoveryQuery({...input,source:''},{profile:true})].find(q=>!attempted.has(q+'|1'));
+        if(fallback){active={query:fallback,page:1,exhausted:false,seen:new Set(),fallback:true};queries.unshift(active);}else active=nextQuery();
+        continue;
+      }
+      // Preserve usable evidence when a later provider request fails.
       if(!diagnostics.providerResults)throw error;
-      diagnostics.partial=true;break;
+      diagnostics.partial=true;providerFailure=true;break;
     }
     diagnostics.providerResults+=rows.length;
+    let freshRows=0;
     for(const row of rows) {
+      const rawKey=strip(row?.url)||strip(row?.title);
+      if(rawKey&&!active.seen.has(rawKey)){freshRows++;active.seen.add(rawKey);}
       const candidate=privateSourcePage(row);
       if(!candidate){diagnostics.excludedSectorOrSource++;continue;}
       if(seen.has(candidate.url)){diagnostics.duplicateSources++;continue;}
       seen.add(candidate.url);
       const assessment=assessSourceRelevance(candidate,input);
-      if(assessment.eligible)candidates.push({...candidate,relevance:assessment.score,matched:assessment.matched,missing:assessment.missing,reason:assessment.reason});
-      else diagnostics.unrelatedSources++;
+      if(!assessment.eligible){diagnostics.unrelatedSources++;continue;}
+      candidates.push({...candidate,relevance:assessment.score,matched:assessment.matched,missing:assessment.missing,reason:assessment.reason});
+      const extracted=personEvidence(candidate,input,assessment);
+      if(!extracted.person){diagnostics[extracted.diagnostic]++;continue;}
+      const identity=indexPerson(extracted.person,peopleIndex);
+      if(identity==='duplicate'){diagnostics.duplicatePeople++;continue;}
+      if(identity==='ambiguous'){diagnostics.ambiguousIdentity++;continue;}
+      people.push(extracted.person);
     }
+    if(!rows.length||!freshRows||moreResults===false)active.exhausted=true;
+    else active.page++;
+    if(people.length>=input.limit)break;
+    // A chosen source owns its own pagination. Broad searches can try a
+    // distinct query after a short page; full pages retain their next page.
+    const alternative=queries.find(query=>query!==active&&!query.exhausted&&query.page===1&&!attempted.has(query.query+'|1'));
+    const otherSource=hasSource&&!active.fallback?queries.find(query=>query!==active&&!query.exhausted&&!query.fallback&&query.page<=active.page):null;
+    active=otherSource||(!active.exhausted&&(hasSource||active.fallback||rows.length>=count)?active:alternative||nextQuery());
   }
   if(!successfulRequests&&restrictedError)throw restrictedError;
   candidates.sort((a,b)=>b.relevance-a.relevance||a.title.localeCompare(b.title));
-  const people=[],peopleSeen=new Set();
-  for(const candidate of candidates){
-    const assessment=assessSourceRelevance(candidate,input),person=personFromSource(candidate,assessment);
-    if(!person){diagnostics.missingIdentity++;continue;}
-    if(!matchingTerms(textWords(person.title),input.audience).length||assessment.missing.some(label=>['Audience','Industry or need','Location','Preferred source'].includes(label))){diagnostics.missingTargetEvidence++;continue;}
-    const identity=person.name.toLowerCase()+'|'+(person.company||'').toLowerCase();
-    if(peopleSeen.has(identity))continue;
-    const industryTerms=assessment.matched.find(item=>item.label==='Industry or need')?.terms||[];
-    const industry=phraseIn(candidate.title+' '+professionalDescription(candidate.description),industryTerms.join(' '));
-    if(!industry){diagnostics.missingTargetEvidence++;continue;}
-    peopleSeen.add(identity);people.push({...person,industry,location:assessment.geography.location,country:assessment.geography.country,private_sector_basis:candidate.private_sector_basis});
-  }
   people.sort((a,b)=>b.relevance-a.relevance||a.name.localeCompare(b.name));
-  const selected=people.slice(0,input.limit);
-  const notice=selected.length?`${selected.length} named ${selected.length===1?'prospect matches':'prospects match'} the audience, industry, and location in public search evidence. They are not verified customers, contacts, or buyers; buying intent and private contact details are not assumed. Confirm current details on each original source before outreach.`:`Search checked ${diagnostics.providerResults} results but found no named private-sector prospects with evidence for all your filters. ${candidates.length?'Relevant source pages are available to inspect. ':''}Try a broader location, an alternate role, or a more common industry term. Results are never filled with invented people.`;
-  return {configured:true,provider,requestsUsed,requested:input.limit,returned:selected.length,candidates:candidates.slice(0,input.limit),people:selected,diagnostics,notice:notice+(diagnostics.partial?' One search request failed; the available results are shown. Retry to complete the search.':'')};
+  const selected=people.slice(0,input.limit),remaining=Math.max(0,input.limit-selected.length),exhausted=queries.every(query=>query.exhausted),failedBeforeExhaustion=Boolean(diagnostics.failedRequests.length&&exhausted);
+  const target={requested:input.limit,returned:selected.length,remaining,status:remaining?(selected.length?'partial':'empty'):'complete',reason:!remaining?'target_reached':providerFailure||failedBeforeExhaustion?'provider_unavailable':exhausted?'source_exhausted':'request_budget_reached',canContinue:Boolean(remaining&&(!exhausted||providerFailure||failedBeforeExhaustion))};
+  const notice=selected.length?`${selected.length} named ${selected.length===1?'prospect matches':'prospects match'} the audience, industry, and location in public search evidence. They are not verified customers, contacts, or buyers; buying intent and private contact details are not assumed. Confirm current details on each original source before outreach.`:`Search checked ${diagnostics.providerResults} results but found no named private-sector prospects with evidence for all your filters. ${candidates.length?'Relevant source pages are available to inspect. ':''}Results are never filled with invented people.`;
+  const shortfall=remaining?` Requested ${input.limit}; found ${selected.length}; ${remaining} still needed with the original filters. ${target.reason==='source_exhausted'?'The available source queries were exhausted.':target.reason==='request_budget_reached'?'The request budget was reached.':'The search provider became unavailable.'}`:'';
+  return {configured:true,provider,requestsUsed,requested:input.limit,returned:selected.length,candidates:candidates.slice(0,input.limit),people:selected,diagnostics,target,notice:notice+shortfall+(diagnostics.partial?remaining?' One search request failed; the available results are shown. Retry to complete the search.':' One search request failed; the requested count was reached using the available results.':'')};
 }

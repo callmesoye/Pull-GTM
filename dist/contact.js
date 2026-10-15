@@ -1,3 +1,4 @@
+import {assessPrivateSector} from './prospect-policy.js';
 const socialFields=[
   ['profile_url','Profile'],['linkedin_url','LinkedIn'],['x_url','X'],
   ['instagram_url','Instagram'],['facebook_url','Facebook'],['jiji_url','Jiji'],
@@ -8,7 +9,7 @@ const blockedHost=/(^|\.)(gov|gouv|gc|go|edu|ac|mil)\.[a-z.]+$/i;
 function externalUrl(value){
   try{
     const url=new URL(String(value||''));
-    if(url.protocol!=='https:'||url.username||url.password||blockedHost.test(url.hostname)||/\.(gov|mil|edu)(\.|$)/i.test(url.hostname))return '';
+    if(url.protocol!=='https:'||url.username||url.password||blockedHost.test(url.hostname)||/\.(gov|mil|edu)(\.|$)/i.test(url.hostname)||assessPrivateSector({source_url:url.href,private_verified:'yes'}).status!=='eligible')return '';
     return url.href;
   }catch{return '';}
 }
@@ -40,7 +41,7 @@ export function displayIdentity(prospect){
   return 'Identity missing';
 }
 export function contactOptions(prospect){
-  if(prospect.suppressed||prospect.origin==='example')return [];
+  if(prospect.suppressed||prospect.origin==='example'||assessPrivateSector(prospect).status==='excluded')return [];
   const options=[],seen=new Set();
   const email=String(prospect.email||'').trim();
   if(/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(email))options.push({label:'Write email',url:`mailto:${email}`,channel:'email'});

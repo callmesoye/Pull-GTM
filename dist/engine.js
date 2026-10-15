@@ -1,3 +1,6 @@
+import {assessPrivateSector} from './prospect-policy.js';
+import {deduplicateRecords,privateReviewFingerprint} from './prospect-records.js';
+export {canonicalProfile,suppressionKeys,mergeSuppressions,isSuppressed,applySuppressionLedger,recordFingerprint,privateReviewFingerprint,normalizeProspect,reconcileReviews} from './prospect-records.js';
 export const norm = value => String(value ?? '').normalize('NFKC').trim().toLowerCase();
 export const terms = value => String(value ?? '').split(',').map(norm).filter(Boolean);
 export const hasIdentity = prospect => [prospect?.name,prospect?.company,prospect?.email].some(norm)||['profile_url','website_url','x_url','instagram_url','facebook_url','jiji_url'].some(key=>Boolean(safePrivateProfileUrl(prospect?.[key])));
@@ -9,6 +12,7 @@ export function safePrivateProfileUrl(value){
   const host=new URL(url).hostname;
   return /\.(gov|mil|edu)(\.|$)/i.test(host)||/(^|\.)(gov|gouv|gc|go|edu|ac|mil)\.[a-z.]+$/i.test(host)?'':url;
 }
+let importBatch=0;
 export function parseCSV(input,{allowIncomplete=false}={}) {
   const text=String(input).replace(/^\uFEFF/,'');
   const rows=[];let row=[],cell='',quoted=false,closedQuote=false;
@@ -32,42 +36,41 @@ export function parseCSV(input,{allowIncomplete=false}={}) {
   const aliases={full_name:'name',contact_name:'name',person_name:'name',customer_name:'name',lead_name:'name',first_name:'first_name',last_name:'last_name',job_title:'title',position:'title',role:'title',target_role:'title',organization:'company',organisation:'company',company_name:'company',business_name:'company',store_name:'company',shop_name:'company',dealer_name:'company',company_size:'employees',email_address:'email',contact_email:'email',business_email:'email',linkedin_url:'profile_url',linkedin:'profile_url',profile:'profile_url',profile_link:'profile_url',url:'profile_url',link:'profile_url',twitter_url:'x_url',twitter:'x_url',website:'website_url',business_website:'website_url',jiji_link:'jiji_url',listing_url:'jiji_url',evidence_url:'source_url',intent_signal:'signal',date:'signal_date',do_not_contact:'suppressed',sector:'industry',category:'industry',target_industry:'industry',target_audience:'audience',customer_segment:'audience',city:'location',region:'location',area:'location'};
   const mapped=headers.map(h=>aliases[h]||h);
   if(new Set(mapped).size!==mapped.length)throw new Error('Two columns map to the same field. Keep one column for each field.');
+  const batch=Date.now().toString(36)+'-'+(++importBatch).toString(36);
   return rows.map((values,index)=>{
     if(values.length!==headers.length)throw new Error('Row '+(index+2)+' has '+values.length+' values; expected '+headers.length+'.');
     const p=Object.fromEntries(mapped.map((h,i)=>[h,values[i]?.trim()||'']));
     if(!p.name&&(p.first_name||p.last_name))p.name=[p.first_name,p.last_name].filter(Boolean).join(' ');
     if(!allowIncomplete&&!hasIdentity(p))throw new Error('Row '+(index+2)+' has no person, company, email, or profile link. Add an identity before importing.');
-    return {...p,id:'import-'+index,origin:'import',suppressed:['true','yes','1'].includes(norm(p.suppressed))};
+    // CSV values can describe evidence but cannot award their own review approval.
+    for(const key of ['review_key','private_review_key','suppression_origin','suppression_aliases','conflicts','conflict_details'])delete p[key];
+    const suppressed=['true','yes','1'].includes(norm(p.suppressed));
+    const record={...p,id:'import-'+batch+'-'+index,record_version:'2',entity_type:p.entity_type==='business'||(!norm(p.name)&&norm(p.company))?'business':'person',origin:'import',private_verified:'no',suppressed,...(suppressed?{suppression_origin:'explicit'}:{})};
+    if(!allowIncomplete&&assessPrivateSector(record).status==='excluded')throw new Error('Row '+(index+2)+' is outside private-sector scope.');
+    return record;
   });
 }
 export function planCSVImport(input){
-  const rows=parseCSV(input,{allowIncomplete:true}),prospects=[],targets=[],skipped=[];
+  const rows=parseCSV(input,{allowIncomplete:true}),prospects=[],targets=[],skipped=[],rejected=[];
   rows.forEach((row,index)=>{
+    const sector=assessPrivateSector(row);if(sector.status==='excluded'){rejected.push({row:index+2,reason:sector.reason});return;}
     if(hasIdentity(row)){prospects.push(row);return;}
     const audience=row.audience||row.title||'',industry=row.industry||'',location=row.location||row.country||'';
     if(audience||industry||location)targets.push({row:index+2,audience,industry,location});
     else skipped.push(index+2);
   });
-  return {prospects,targets,skipped};
+  return {prospects,targets,skipped,rejected};
 }
 export function deduplicate(prospects) {
-  const seen=new Map(),clean=[];let duplicates=0;
-  for(const item of prospects) {
-    const key=norm(item.email)||norm(item.profile_url).replace(/\/$/,'')||(norm(item.name)||norm(item.company)?norm(item.name)+'|'+norm(item.company):'row:'+item.id);
-    if(seen.has(key)) {
-      duplicates++;const previous=seen.get(key);
-      previous.suppressed=previous.suppressed||item.suppressed;
-      const conflicts=['title','company','industry','country','employees','signal','signal_date','source_url'].filter(k=>previous[k]&&item[k]&&norm(previous[k])!==norm(item[k]));
-      previous.conflicts=[...new Set([...(previous.conflicts||[]),...(item.conflicts||[]),...conflicts])];
-      for(const [field,value] of Object.entries(item)){if(['id','origin','suppressed','conflicts'].includes(field))continue;if(!norm(previous[field])&&norm(value))previous[field]=value;}
-    }else {const copy={...item};seen.set(key,copy);clean.push(copy);}
-  }
-  return {prospects:clean,duplicates};
+  return deduplicateRecords(prospects);
 }
 export function qualify(p,rules,now=new Date()) {
   const checks=[],fail=[],missing=[];
   if(!hasIdentity(p))missing.push('Prospect identity is missing');
-  if(p.origin==='discovery'&&p.private_verified!=='yes')missing.push('Confirm this is a current private-sector person and business');
+  const sector=assessPrivateSector(p);
+  if(sector.status==='excluded')fail.push(sector.reason);
+  else if(sector.status==='review')missing.push(sector.reason);
+  if(p.private_review_key&&p.private_review_key!==privateReviewFingerprint(p))missing.push('Identity or source changed; confirm private-sector status again');
   const match=(label,value,options,mode='exact')=>{
     if(!options.length)return;
     if(!norm(value)){missing.push(label+' is missing');checks.push({label,state:'unknown',detail:'Not provided'});return;}
@@ -87,7 +90,7 @@ export function qualify(p,rules,now=new Date()) {
   }
   const evidence=[];
   if(rules.evidence) {
-    if(!safeUrl(p.source_url))evidence.push('A valid source link is missing');
+    if(!safePrivateProfileUrl(p.source_url))evidence.push('A valid private-sector HTTPS source link is missing');
     if(!norm(p.signal))evidence.push('Signal context is missing');
     const date=String(p.signal_date??''), parsed=new Date(date+'T00:00:00Z');
     const validDate=/^\d{4}-\d{2}-\d{2}$/.test(date)&&!Number.isNaN(+parsed)&&parsed.toISOString().slice(0,10)===date;

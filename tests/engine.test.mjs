@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {qualify,parseCSV,planCSVImport,deduplicate,safeUrl,csvExport,draftFor} from '../dist/engine.js';
 const now=new Date('2026-10-08T12:00:00Z');
 const rules={roles:'Founder, CEO, Head of Growth',industries:'SaaS',countries:'',min:'',max:'',signals:'',evidence:true,days:'90'};
-const prospect={id:'1',name:'Test Person',company:'Test Company',title:'Co-Founder',industry:'SaaS',country:'Nigeria',employees:'20',signal:'Hiring a sales team',signal_date:'2026-10-01',source_url:'https://example.com/jobs'};
+const prospect={private_verified:'yes',id:'1',name:'Test Person',company:'Test Company',title:'Co-Founder',industry:'SaaS',country:'Nigeria',employees:'20',signal:'Hiring a sales team',signal_date:'2026-10-01',source_url:'https://example.com/jobs'};
 test('Every country is eligible when geography is unrestricted',()=>{for(const country of ['Nigeria','India','Brazil','Japan','United Arab Emirates'])assert.equal(qualify({...prospect,country},rules,now).status,'fit');});
 test('Strong role match does not override an industry exclusion',()=>{const p=qualify({...prospect,industry:'Retail'},rules,now);assert.equal(p.status,'excluded');assert.ok(p.reasons.includes('Industry does not match'));});
 test('Missing and stale evidence never becomes an audience match',()=>{for(const changes of [{source_url:''},{signal_date:''},{signal_date:'2026-01-01'},{signal_date:'2026-10-09'},{signal_date:'2026-02-31'},{signal:''}])assert.equal(qualify({...prospect,...changes},rules,now).status,'review');});

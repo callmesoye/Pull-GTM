@@ -91,7 +91,7 @@ test('Serper requests use fixed endpoint and private key header with a strict re
   assert.equal(new URL(requests[0].url).origin,'https://google.serper.dev');
   assert.equal(requests[0].options.method,'POST');
   assert.equal(requests[0].options.headers['X-API-KEY'],'secret-example');
-  assert.deepEqual(JSON.parse(requests[0].options.body),{q:'Lagos Used cars Car buyers LinkedIn',num:30});
+  assert.deepEqual(JSON.parse(requests[0].options.body),{q:'Lagos Used cars Car buyers LinkedIn',num:50});
   assert.equal(new URL(requests[0].url).search,'');
   assert.equal(requests[0].options.redirect,'error');
   assert.equal(result.requestsUsed,1);
@@ -212,7 +212,7 @@ test('realistic indexed LinkedIn evidence becomes a named private-sector prospec
   assert.ok(result.diagnostics.excludedSectorOrSource>=6);
   assert.ok(result.diagnostics.missingTargetEvidence>=1);
   assert.equal(requests.length,2);
-  assert.equal(requests[0].body.num,30);
+  assert.equal(requests[0].body.num,50);
   assert.equal(requests[1].body.page,2);
   assert.ok(requests.every(request=>new URL(request.url).hostname==='google.serper.dev'));
 });
@@ -317,4 +317,178 @@ test('paid search requires a verified owner and a successful database budget cla
     const status=await (await backend.discovery(new Request('https://pull.example/api/discovery'))).text();
     assert.equal(status.includes('private-test-key'),false);
   }
+});
+
+const goalNames=['Ada Okafor','Ben Smith','Chidi Eze','Dara Bello','Ebele Nwosu','Farah Khan','Grace Cole','Hassan Musa','Ifeoma Obi','James Stone','Kemi Adeyemi','Lara Green'];
+const goalRow=(index,overrides={})=>({title:`${goalNames[index]} - CEO at Green Soft Ltd | LinkedIn`,link:`https://www.linkedin.com/in/goal-${index}`,snippet:'Private software company · Location: Lagos, Nigeria',...overrides});
+const goalInput=overrides=>discoveryInput({audience:'CEO',industry:'Software',location:'Lagos, Nigeria',source:'LinkedIn',limit:3,...overrides});
+
+test('requested lead count drives overfetch and stops requests once enough fully matching people exist',async()=>{
+  const requests=[];
+  const rows=[
+    goalRow(0,{title:'Private software company CEOs in Lagos'}),
+    goalRow(1,{snippet:'Private software company · Location: Abuja, Nigeria'}),
+    goalRow(2,{title:'Chidi Eze - CFO at Green Soft Ltd | LinkedIn'}),
+    goalRow(3),goalRow(4),goalRow(5)
+  ];
+  const result=await discoverPrivatePages(goalInput(),{key:'fixture',provider:'serper',maxQueries:3,transport:async(url,options)=>{requests.push(JSON.parse(options.body));return Response.json({organic:rows});}});
+  assert.equal(requests.length,1,'raw noise does not count toward progress; three matching named people do');
+  assert.equal(requests[0].num,10,'small targets still overfetch enough raw results for filtering');
+  assert.equal(result.people.length,3);
+  assert.deepEqual(result.target,{requested:3,returned:3,remaining:0,status:'complete',reason:'target_reached',canContinue:false});
+  assert.deepEqual(new Set(result.people.map(person=>person.name)),new Set(goalNames.slice(3,6)));
+});
+
+test('selected-source pagination finds the remaining people and does not count duplicate identities as progress',async()=>{
+  const requests=[];
+  const pages=[
+    [goalRow(0),goalRow(1,{snippet:'Private software company · Location: Abuja, Nigeria'})],
+    [goalRow(0,{link:'https://linkedin.com/in/GOAL-0/'}),goalRow(2)],
+    [goalRow(3)]
+  ];
+  const result=await discoverPrivatePages(goalInput(),{key:'fixture',provider:'serper',maxQueries:3,transport:async(url,options)=>{requests.push(JSON.parse(options.body));return Response.json({organic:pages[requests.length-1]});}});
+  assert.equal(result.returned,3);
+  assert.equal(result.target.status,'complete');
+  assert.deepEqual(requests.map(request=>request.page||1),[1,2,3]);
+  assert.equal(new Set(requests.map(request=>request.q)).size,1);
+  assert.equal(new Set(requests.map(request=>request.num)).size,1,'the provider page size remains stable');
+  assert.equal(result.diagnostics.duplicatePeople,1);
+  assert.equal(result.diagnostics.missingTargetEvidence,1);
+});
+
+test('Brave paginates full noisy result pages within its cap and stops immediately on the target',async()=>{
+  const requests=[];
+  const noise=Array.from({length:19},(_,index)=>({title:'Private software company',url:`https://software.example/noise-${index}`,description:'Software products in Lagos, Nigeria'}));
+  const first=[{...goalRow(0),url:goalRow(0).link,description:goalRow(0).snippet},...noise];
+  const second=Array.from({length:9},(_,index)=>({...goalRow(index+1),url:goalRow(index+1).link,description:goalRow(index+1).snippet}));
+  const result=await discoverPrivatePages(goalInput({source:'',limit:10}),{key:'fixture',provider:'brave',maxQueries:3,transport:async url=>{const parsed=new URL(url);requests.push(parsed);return Response.json({web:{results:requests.length===1?first:second}});}});
+  assert.equal(result.returned,10);
+  assert.equal(requests.length,2);
+  assert.deepEqual(requests.map(url=>url.searchParams.get('count')),['20','20']);
+  assert.deepEqual(requests.map(url=>url.searchParams.get('offset')||'0'),['0','1']);
+  assert.equal(requests[0].searchParams.get('q'),requests[1].searchParams.get('q'));
+  assert.equal(result.target.reason,'target_reached');
+});
+
+test('a large target uses bounded Serper overfetch and reports an honest shortfall at the exact request ceiling',async()=>{
+  for(const maxQueries of [1,2,3]){
+    const requests=[];
+    const result=await discoverPrivatePages(goalInput({limit:30}),{key:'fixture',provider:'serper',maxQueries,transport:async(url,options)=>{requests.push(JSON.parse(options.body));return Response.json({organic:[goalRow(requests.length-1)]});}});
+    assert.equal(requests.length,maxQueries);
+    assert.ok(requests.every(request=>request.num===50));
+    assert.equal(result.returned,maxQueries);
+    assert.deepEqual(result.target,{requested:30,returned:maxQueries,remaining:30-maxQueries,status:'partial',reason:'request_budget_reached',canContinue:true});
+    assert.match(result.notice,new RegExp(`${30-maxQueries} still needed with the original filters`));
+  }
+});
+
+test('empty selected sources stop without spending the rest of the budget and report exhaustion',async()=>{
+  let calls=0;
+  const result=await discoverPrivatePages(goalInput(),{key:'fixture',provider:'serper',maxQueries:3,transport:async()=>{calls++;return Response.json({organic:[]});}});
+  assert.equal(calls,1);
+  assert.deepEqual(result.target,{requested:3,returned:0,remaining:3,status:'empty',reason:'source_exhausted',canContinue:false});
+  assert.match(result.notice,/no named private-sector prospects/);
+});
+
+test('broad searches use distinct alternatives rather than repeating an identical first page',async()=>{
+  const requests=[];
+  const result=await discoverPrivatePages(goalInput({source:''}),{key:'fixture',provider:'serper',maxQueries:3,transport:async(url,options)=>{requests.push(JSON.parse(options.body));return Response.json({organic:[goalRow(0)]});}});
+  assert.equal(requests.length,3);
+  assert.equal(new Set(requests.map(request=>request.q)).size,3);
+  assert.ok(requests.every(request=>!request.page));
+  assert.equal(result.returned,1);
+  assert.equal(result.target.remaining,2);
+});
+
+test('each selected source gets its own query and pagination state',async()=>{
+  const requests=[];
+  const rows=[goalRow(0),goalRow(1,{link:'https://x.com/ben-smith'}),goalRow(2)];
+  const result=await discoverPrivatePages(goalInput({source:'LinkedIn, X'}),{key:'fixture',provider:'serper',maxQueries:3,transport:async(url,options)=>{requests.push(JSON.parse(options.body));return Response.json({organic:[rows[requests.length-1]]});}});
+  assert.equal(result.returned,3);
+  assert.match(requests[0].q,/linkedin/i);
+  assert.match(requests[1].q,/\bX\b/);
+  assert.equal(requests[0].page,undefined);
+  assert.equal(requests[1].page,undefined);
+  assert.equal(requests[2].q,requests[0].q);
+  assert.equal(requests[2].page,2);
+});
+
+test('selected-source hostname and path checks reject spoofed source URLs',async()=>{
+  const input=goalInput(),valid={title:goalRow(0).title,description:goalRow(0).snippet,source:'private.example'};
+  for(const url of ['https://linkedin.com.private.example/in/ada','https://notlinkedin.com/in/ada','https://private.example/linkedin.com/in/ada','https://private.example/?next=https://linkedin.com/in/ada','https://www.linkedin.com/inside/ada','https://www.linkedin.com/company/ada?next=linkedin.com/in/ada']){
+    assert.ok(assessSourceRelevance({...valid,url},input).missing.includes('Preferred source'),url);
+  }
+  assert.equal(assessSourceRelevance({...valid,url:'https://ng.linkedin.com/in/ada'},input).missing.includes('Preferred source'),false);
+  const result=await discoverPrivatePages(input,{key:'fixture',provider:'serper',maxQueries:1,transport:async()=>Response.json({organic:[goalRow(0,{link:'https://linkedin.com.private.example/in/ada'})]})});
+  assert.equal(result.returned,0);
+  assert.equal(result.diagnostics.missingTargetEvidence,1);
+});
+
+test('late provider failure reports the actual stop cause while preserving the requested remainder',async()=>{
+  let calls=0;
+  const result=await discoverPrivatePages(goalInput(),{key:'fixture',provider:'serper',maxQueries:3,transport:async()=>++calls===1?Response.json({organic:[goalRow(0)]}):new Response('',{status:429})});
+  assert.equal(calls,2);
+  assert.equal(result.target.reason,'provider_unavailable');
+  assert.equal(result.target.status,'partial');
+  assert.equal(result.target.remaining,2);
+  assert.equal(result.target.canContinue,true);
+  assert.equal(result.people[0].name,'Ada Okafor');
+});
+
+test('Brave explicit exhaustion metadata ends pagination without suggesting more available pages',async()=>{
+  let calls=0;
+  const row=goalRow(0);
+  const result=await discoverPrivatePages(goalInput(),{key:'fixture',provider:'brave',maxQueries:3,transport:async()=>{calls++;return Response.json({query:{more_results_available:false},web:{results:[{title:row.title,url:row.link,description:row.snippet}]}});}});
+  assert.equal(calls,1);
+  assert.equal(result.target.reason,'source_exhausted');
+  assert.equal(result.target.canContinue,false);
+  assert.equal(result.target.remaining,2);
+});
+
+test('a rejected source query followed by an empty fallback does not claim the selected source was exhausted',async()=>{
+  let calls=0;
+  const result=await discoverPrivatePages(goalInput(),{key:'fixture',provider:'serper',maxQueries:3,transport:async()=>++calls===1?Response.json({message:'Query pattern not allowed for free accounts.'},{status:400}):Response.json({organic:[]})});
+  assert.equal(calls,2);
+  assert.equal(result.target.status,'empty');
+  assert.equal(result.target.reason,'provider_unavailable');
+  assert.equal(result.target.canContinue,true);
+});
+
+test('same-name coworkers at the same employer with distinct LinkedIn profiles each count toward the target',async()=>{
+  let calls=0;
+  const rows=[goalRow(0,{link:'https://www.linkedin.com/in/ada-east'}),goalRow(0,{link:'https://www.linkedin.com/in/ada-west'})];
+  const result=await discoverPrivatePages(goalInput({limit:2}),{key:'fixture',provider:'serper',maxQueries:3,transport:async()=>{calls++;return Response.json({organic:rows});}});
+  assert.equal(calls,1);
+  assert.equal(result.returned,2);
+  assert.equal(result.target.status,'complete');
+  assert.equal(new Set(result.people.map(person=>person.profile_url)).size,2);
+  assert.equal(result.diagnostics.duplicatePeople,0);
+});
+
+test('a shared canonical profile never inflates the count and registers names from duplicate source evidence',async()=>{
+  const rows=[
+    goalRow(0),
+    goalRow(1,{link:'https://linkedin.com/in/GOAL-0/'}),
+    goalRow(1,{link:'https://greensoft.example/team/ben'}),
+    goalRow(2)
+  ];
+  const result=await discoverPrivatePages(goalInput({source:'',limit:2}),{key:'fixture',provider:'serper',maxQueries:1,transport:async()=>Response.json({organic:rows})});
+  assert.equal(result.returned,2);
+  assert.deepEqual(new Set(result.people.map(person=>person.name)),new Set(['Ada Okafor','Chidi Eze']));
+  assert.equal(result.diagnostics.duplicatePeople,2);
+  assert.equal(result.target.status,'complete');
+});
+
+test('no-profile evidence cannot add or choose an identity when multiple same-name coworkers are known',async()=>{
+  const rows=[
+    goalRow(0,{link:'https://greensoft.example/team/ada'}),
+    goalRow(0),
+    goalRow(0,{link:'https://www.linkedin.com/in/another-ada'}),
+    goalRow(0,{link:'https://greensoft.example/about/ada'})
+  ];
+  const result=await discoverPrivatePages(goalInput({source:'',limit:3}),{key:'fixture',provider:'serper',maxQueries:1,transport:async()=>Response.json({organic:rows})});
+  assert.equal(result.returned,2);
+  assert.equal(result.target.remaining,1);
+  assert.equal(result.diagnostics.duplicatePeople,1,'the first profile enriches the unique earlier name match');
+  assert.equal(result.diagnostics.ambiguousIdentity,1,'later profile-free evidence cannot prove a third unique person');
 });

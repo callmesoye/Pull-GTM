@@ -4,12 +4,12 @@ import {createBackend,configuration,validateWorkspace} from '../server/backend.j
 import {createClient} from '../server/supabase-rest.js';
 
 const env={SUPABASE_URL:'https://project.supabase.co',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_fixture'};
-const payload=()=>({version:1,prospects:[{id:'1',name:'Fictional Person'}],shortlist:['1'],drafts:{},audit:[],mode:'example',identity:'Pull',context:'company',website:'',offer:'Review prospects',setup:true,rules:{roles:'Founder',industries:'',countries:'',min:'',max:'',signals:'',days:'90',evidence:true},duplicates:0});
+const payload=()=>({version:1,prospects:[{id:'1',name:'Fictional Person',title:'Founder',company:'Fictional Company',signal:'Hiring',signal_date:'2026-10-08',source_url:'https://example.test/hiring',origin:'example'}],shortlist:['1'],drafts:{},audit:[],mode:'example',identity:'Pull',context:'company',website:'',offer:'Review prospects',setup:true,rules:{roles:'Founder',industries:'',countries:'',min:'',max:'',signals:'',days:'90',evidence:true},duplicates:0});
 const request=(path,body,{cookie='',origin='https://pull.example',method,accountId=cookie.match(/(?:^|;\s*)__Host-pull-(?:access=valid-|refresh=refresh-)([^;]+)/)?.[1]}={})=>new Request('https://pull.example/api/'+path,{method:method||(body===undefined?'GET':'POST'),headers:{origin,cookie,'Content-Type':'application/json',...(accountId?{'X-Pull-Account':accountId}:{})},body:body===undefined?undefined:JSON.stringify(body)});
 const sessionCookie=id=>'__Host-pull-access=valid-'+id+'; __Host-pull-refresh=refresh-'+id;
 const user=id=>({id,email:id+'@example.test',is_anonymous:false});
 
-function fixture({unavailable=false,anonymous=false,confirmSignup=false,authStatus=0,refreshStatus=0,authMetadata={}}={}) {
+function fixture({unavailable=false,anonymous=false,confirmSignup=false,authStatus=0,refreshStatus=0,authMetadata={},beforePatch}={}) {
   const rows=new Map(),calls=[];
   const transport=async(input,options)=>{
     const u=new URL(input),body=options.body?JSON.parse(options.body):null;
@@ -36,6 +36,7 @@ function fixture({unavailable=false,anonymous=false,confirmSignup=false,authStat
     if(u.searchParams.get('user_id')!=='eq.'+id)return Response.json([]);
     const row=rows.get(id);
     if(options.method==='PATCH'){
+      if(beforePatch)await beforePatch({id,row,rows,body});
       if(!row||u.searchParams.get('revision')!=='eq.'+row.revision)return Response.json([]);
       rows.set(id,body);return Response.json([body]);
     }
@@ -99,6 +100,80 @@ test('A stale revision cannot overwrite a newer cloud save',async()=>{
   assert.equal((await backend.workspace(request('workspace',{workspace:{...payload(),identity:'Wrong'},revision:1},options))).status,409);
   assert.equal(rows.get('A').payload.identity,'Pull');assert.equal(rows.get('A').revision,2);
   assert.equal((await backend.workspace(request('workspace',{workspace:payload(),revision:0},options))).status,409);
+});
+test('Replacement and cleared workspaces preserve this account\'s saved suppression ledger',async()=>{
+  const {backend,rows}=fixture(),options={cookie:sessionCookie('A')};
+  const original=payload();original.mode='import';original.prospects[0].email='Blocked@Example.test';original.prospects[0].suppressed=true;
+  assert.equal((await backend.workspace(request('workspace',{workspace:original,revision:0},options))).status,200);
+  const ledger=structuredClone(rows.get('A').payload.suppressions);
+  assert.ok(ledger.includes('email:blocked@example.test'));
+  const replacement=payload();replacement.mode='import';replacement.prospects[0]={...replacement.prospects[0],id:'replacement',email:'blocked@example.test',suppressed:false};replacement.shortlist=['replacement'];
+  replacement.drafts={replacement:{subject:'Hello',body:'A saved draft',channel:'email',ready:true}};
+  assert.equal((await backend.workspace(request('workspace',{workspace:replacement,revision:1},options))).status,200);
+  assert.deepEqual(rows.get('A').payload.suppressions,ledger);
+  assert.equal(rows.get('A').payload.prospects[0].suppressed,true);
+  assert.deepEqual(rows.get('A').payload.shortlist,[]);
+  assert.equal(rows.get('A').payload.drafts.replacement.ready,false);
+  const cleared={...payload(),mode:'empty',prospects:[],shortlist:[],drafts:{},suppressions:[]};
+  assert.equal((await backend.workspace(request('workspace',{workspace:cleared,revision:2},options))).status,200);
+  assert.deepEqual(rows.get('A').payload.suppressions,ledger);
+  assert.deepEqual(rows.get('A').payload.prospects,[]);
+});
+test('Saved suppression preferences do not leak into another account',async()=>{
+  const {backend,rows}=fixture();
+  const blocked=payload();blocked.prospects[0].email='owner@example.test';blocked.prospects[0].suppressed=true;
+  assert.equal((await backend.workspace(request('workspace',{workspace:blocked,revision:0},{cookie:sessionCookie('A')}))).status,200);
+  const other=payload();other.prospects[0].email='owner@example.test';
+  assert.equal((await backend.workspace(request('workspace',{workspace:other,revision:0},{cookie:sessionCookie('B')}))).status,200);
+  assert.deepEqual(rows.get('B').payload.suppressions,[]);
+  assert.notEqual(rows.get('B').payload.prospects[0].suppressed,true);
+  const response=await backend.workspace(request('workspace',undefined,{cookie:sessionCookie('B')}));
+  assert.deepEqual((await response.json()).workspace.payload.suppressions,[]);
+});
+test('Saving a shared-inbox match never promotes another person\'s other identities into the suppression ledger',async()=>{
+  const {backend,rows}=fixture(),options={cookie:sessionCookie('A')};
+  const original=payload();
+  Object.assign(original.prospects[0],{email:'shared@example.test',profile_url:'https://x.com/FirstPerson',suppressed:true,suppression_origin:'explicit'});
+  original.prospects.push({...original.prospects[0],id:'2',name:'Fictional Other Person',company:'Fictional Other Company',profile_url:'https://x.com/OtherPerson',suppressed:false,suppression_origin:'matched'});
+  assert.equal((await backend.workspace(request('workspace',{workspace:original,revision:0},options))).status,200);
+  const ledger=structuredClone(rows.get('A').payload.suppressions);
+  assert.equal(rows.get('A').payload.prospects[1].suppression_origin,'matched');
+  assert.ok(!ledger.includes('profile:https://x.com/otherperson'));
+  assert.ok(!ledger.includes('entity:fictional other person|fictional other company'));
+  const next=structuredClone(rows.get('A').payload);delete next.suppressions;
+  assert.equal((await backend.workspace(request('workspace',{workspace:next,revision:1},options))).status,200);
+  assert.deepEqual(rows.get('A').payload.suppressions,ledger);
+  const changedContact=structuredClone(rows.get('A').payload);changedContact.prospects[1].email='other-person@example.test';
+  assert.equal((await backend.workspace(request('workspace',{workspace:changedContact,revision:2},options))).status,200);
+  assert.equal(rows.get('A').payload.prospects[1].suppressed,false);
+  assert.equal(rows.get('A').payload.prospects[0].suppressed,true);
+  assert.deepEqual(rows.get('A').payload.suppressions,ledger);
+  const resaved=structuredClone(rows.get('A').payload);
+  assert.equal((await backend.workspace(request('workspace',{workspace:resaved,revision:3},options))).status,200);
+  assert.equal(rows.get('A').payload.prospects[1].suppressed,false);
+  assert.deepEqual(rows.get('A').payload.suppressions,ledger);
+});
+test('A material cloud record change invalidates an older client\'s retained shortlist and prepared flag',async()=>{
+  const {backend,rows}=fixture(),options={cookie:sessionCookie('A')};
+  const original=payload();original.drafts={'1':{subject:'Hello',body:'A reviewed message',channel:'email',ready:true}};
+  assert.equal((await backend.workspace(request('workspace',{workspace:original,revision:0},options))).status,200);
+  assert.deepEqual(rows.get('A').payload.shortlist,['1']);
+  assert.equal(rows.get('A').payload.drafts['1'].ready,true);
+  const changed=structuredClone(original);changed.prospects[0].company='Different Private Company';
+  assert.equal((await backend.workspace(request('workspace',{workspace:changed,revision:1},options))).status,200);
+  assert.deepEqual(rows.get('A').payload.shortlist,[]);
+  assert.equal(rows.get('A').payload.drafts['1'].ready,false);
+  assert.equal(rows.get('A').payload.drafts['1'].body,'A reviewed message');
+});
+test('A save racing after the suppression-preservation read still fails its final revision comparison',async()=>{
+  const {backend,rows}=fixture({beforePatch:({row})=>{row.revision++;row.payload.identity='Concurrent save';row.payload.suppressions=['email:newer@example.test'];}});
+  const options={cookie:sessionCookie('A')};
+  assert.equal((await backend.workspace(request('workspace',{workspace:payload(),revision:0},options))).status,200);
+  const response=await backend.workspace(request('workspace',{workspace:{...payload(),identity:'Stale save'},revision:1},options));
+  assert.equal(response.status,409);
+  assert.equal(rows.get('A').revision,2);
+  assert.equal(rows.get('A').payload.identity,'Concurrent save');
+  assert.deepEqual(rows.get('A').payload.suppressions,['email:newer@example.test']);
 });
 test('Malformed references and missing revisions fail without writing data',async()=>{
   const {backend,rows}=fixture();for(const body of [{workspace:{...payload(),shortlist:['missing']},revision:0},{workspace:payload()},{workspace:null,revision:0}])assert.equal((await backend.workspace(request('workspace',body,{cookie:sessionCookie('A')}))).status,400);assert.equal(rows.size,0);
