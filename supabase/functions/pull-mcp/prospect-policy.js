@@ -102,6 +102,7 @@ function publicEntity(value, country) {
   const name = raw.replace(/^(?:fictional|example)\s*[:–—-]?\s+/, '').replace(/(?:\s*\([^)]*\))+$/, '').replace(/[.,]+$/, '').replace(/^the\s+/, '');
   if (!name) return false;
   if (publicEntityNames.has(name)) return true;
+  if (/^(?:federal|state|provincial|municipal) ministry(?:$| of )/.test(name)) return true;
   if (['nigeria', 'ng', 'nga'].includes(clean(country)) && nigeriaPublicAbbreviations.has(name)) return true;
   if (/\b(?:government of|federal government|state government|municipal government|provincial government|local government (?:area|council))\b/.test(name)) return true;
   if (/^(?:federal |national |[\p{L} -]+ state |(?:united states|us|u\.s\.|uk) )?(?:ministry|department) of (?:health|education|finance|defen[cs]e|justice|interior|agriculture|foreign affairs|labou?r|transport|commerce|environment|works|information|energy|petroleum|housing|aviation|trade|communications|science|youth|women)(?:\b|$)/u.test(name)) return true;

@@ -1,0 +1,85 @@
+import {createCipheriv,createDecipheriv,createHash,randomBytes} from 'node:crypto';
+import {validateWorkspace} from '../dist/workspace.js';
+import {qualify,recordFingerprint} from '../dist/engine.js';
+import {validContactUrl} from '../dist/contact.js';
+const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const email=value=>typeof value==='string'&&/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(value);
+const providers={gmail:{authorize:'https://accounts.google.com/o/oauth2/v2/auth',token:'https://oauth2.googleapis.com/token',identity:'https://openidconnect.googleapis.com/v1/userinfo',scopes:['openid','email','https://www.googleapis.com/auth/gmail.send'],prefix:'PULL_GMAIL'},x:{authorize:'https://x.com/i/oauth2/authorize',token:'https://api.x.com/2/oauth2/token',identity:'https://api.x.com/2/users/me',scopes:['users.read','tweet.read','dm.write','offline.access'],prefix:'PULL_X'}};
+const failure=(message,status=400)=>Object.assign(new Error(message),{status});
+export function channelConfiguration(env,provider){
+ const p=providers[provider];if(!p)return null;
+ try{const app=new URL(env.PULL_APP_URL),secret=env.PULL_CHANNEL_SECRET||env.PULL_OAUTH_COOKIE_SECRET;
+ if(app.protocol!=='https:'||app.username||app.password||app.pathname!=='/'||app.search||app.hash||typeof secret!=='string'||secret.length<32||!env[p.prefix+'_CLIENT_ID']||!env[p.prefix+'_CLIENT_SECRET'])return null;
+ return {...p,provider,origin:app.origin,secret,clientId:env[p.prefix+'_CLIENT_ID'],clientSecret:env[p.prefix+'_CLIENT_SECRET'],callback:app.origin+'/api/channels?callback='+provider};
+ }catch{return null;}
+}
+export function seal(value,secret,binding){const iv=randomBytes(12),key=createHash('sha256').update('pull-channel-v1\0'+secret).digest(),c=createCipheriv('aes-256-gcm',key,iv);c.setAAD(Buffer.from(binding));const encrypted=Buffer.concat([c.update(JSON.stringify(value),'utf8'),c.final()]);return [iv,c.getAuthTag(),encrypted].map(b=>b.toString('base64url')).join('.');}
+export function unseal(value,secret,binding){const parts=String(value).split('.');if(parts.length!==3)throw failure('Reconnect this account.',409);const [iv,tag,data]=parts.map(x=>Buffer.from(x,'base64url'));const c=createDecipheriv('aes-256-gcm',createHash('sha256').update('pull-channel-v1\0'+secret).digest(),iv);c.setAAD(Buffer.from(binding));c.setAuthTag(tag);return JSON.parse(Buffer.concat([c.update(data),c.final()]).toString('utf8'));}
+function cleanTokens(value,old={}){if(typeof value.access_token!=='string'||!value.access_token||value.access_token.length>12000||!Number.isFinite(value.expires_in)||value.expires_in<1||value.expires_in>2678400)throw failure('The provider did not return usable access. Reconnect.',502);return {access_token:value.access_token,refresh_token:typeof value.refresh_token==='string'?value.refresh_token:old.refresh_token,scope:value.scope||old.scope,expiresAt:Date.now()+value.expires_in*1000};}
+async function providerJSON(url,options,transport){const response=await transport(url,{...options,signal:AbortSignal.timeout(12000),redirect:'error'});if(!response.ok)throw failure(response.status===429?'The provider rate limit was reached. Try later.':'The provider rejected this request. Check account permissions.',response.status===429?429:502);try{return await response.json();}catch{throw failure('The provider returned an invalid response.',502);}}
+async function tokenRequest(config,values,transport){const headers={'Content-Type':'application/x-www-form-urlencoded'};if(config.provider==='x')headers.Authorization='Basic '+Buffer.from(config.clientId+':'+config.clientSecret).toString('base64');const body=new URLSearchParams({...values,client_id:config.clientId,...(config.provider==='gmail'?{client_secret:config.clientSecret}:{})});return providerJSON(config.token,{method:'POST',headers,body:body.toString()},transport);}
+export function deliveryEnvelope(workspace,prospectId,{provider,consent,consentEvidence},now=new Date()){
+ const p=validateWorkspace(workspace,{now});const record=p.prospects.find(r=>r.id===prospectId),draft=p.drafts[prospectId];
+ if(!record||record.origin==='example'||!p.shortlist.includes(prospectId)||qualify(record,p.rules,now).status!=='fit'||!draft?.ready||record.review_key&&record.review_key!==recordFingerprint(record))throw failure('Review this prospect and prepare the current draft before sending.',409);
+ if(consent!==true||typeof consentEvidence!=='string'||consentEvidence.trim().length<12||consentEvidence.length>1000)throw failure('Record how this recipient agreed to receive this message.');
+ if(typeof draft.body!=='string'||!draft.body.trim()||draft.body.length>5000)throw failure('Use a message of 1–5,000 characters.');
+ if(provider==='gmail'){if(draft.channel!=='email'||!email(record.email))throw failure('Choose an email draft with a checked recipient address.');return {recipient:record.email,subject:String(draft.subject||'').slice(0,200),body:draft.body};}
+ if(provider==='x'){if(draft.channel!=='x')throw failure('Choose an X draft.');const url=validContactUrl('x_url',record.x_url);const username=url&&new URL(url).pathname.match(/^\/([A-Za-z0-9_]{1,15})\/?$/)?.[1];if(!username||['home','intent','messages','settings','explore','search'].includes(username.toLowerCase()))throw failure('Add this recipient’s checked X profile.');return {recipient:username,body:draft.body};}
+ throw failure('Choose a supported connected channel.');
+}
+export function gmailRaw(sender,envelope){if(!email(sender)||!email(envelope.recipient))throw failure('Invalid email address.');return Buffer.from('From: '+sender+'\r\nTo: '+envelope.recipient+'\r\nSubject: =?UTF-8?B?'+Buffer.from(envelope.subject||'').toString('base64')+'?=\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n'+Buffer.from(envelope.body).toString('base64').match(/.{1,76}/g).join('\r\n')).toString('base64url');}
+export async function channelRequest({request,user,db,env,body,cookies,cookie,transport=fetch,now=()=>new Date()}){
+ const url=new URL(request.url),provider=request.method==='GET'?url.searchParams.get('callback'):body?.provider,config=channelConfiguration(env,provider);
+ const safe=row=>({id:row.id,provider:row.provider,label:row.label,account_id:row.account_id,expires_at:row.expires_at,revoked:row.revoked_at!==null});
+ if(request.method==='GET'&&!provider){const result=await db.from('pull_channel_connections').select('id,provider,label,account_id,expires_at,revoked_at').eq('user_id',user.id).all();if(result.error)throw failure('Connections are unavailable.',503);const jobs=await db.from('pull_delivery_jobs').select('id,recipient,status,provider_receipt,created_at').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20).all();if(jobs.error)throw failure('Delivery history is unavailable.',503);return {deliveries:jobs.data,connections:result.data.map(safe),providers:Object.keys(providers).map(id=>({id,configured:Boolean(channelConfiguration(env,id))}))};}
+ if(body?.action==='disconnect'){
+  if(Object.keys(body).some(k=>!['action','provider','connectionId'].includes(k))||!UUID.test(body.connectionId||''))throw failure('Choose a connection.');
+  const result=await db.from('pull_channel_connections').update({token_cipher:'',revoked_at:now().toISOString()}).eq('user_id',user.id).eq('id',body.connectionId).eq('provider',provider).select('id').maybeSingle();if(result.error)throw failure('Could not disconnect.',503);return {disconnected:Boolean(result.data)};
+ }
+ if(!config||url.origin!==config.origin)throw failure('This provider needs an application client ID and secret before accounts can connect.',503);
+ const stateName='channel-'+provider;
+ if(request.method==='POST'&&body.action==='connect'){
+  if(Object.keys(body).some(k=>!['action','provider'].includes(k)))throw failure('Invalid connection request.');
+  const verifier=randomBytes(48).toString('base64url'),nonce=randomBytes(24).toString('base64url');
+  cookie(stateName,seal({owner:user.id,nonce,verifier,at:now().getTime()},config.secret,'oauth:'+provider),600);
+  const target=new URL(config.authorize);for(const [key,value]of Object.entries({response_type:'code',client_id:config.clientId,redirect_uri:config.callback,scope:config.scopes.join(' '),state:nonce,code_challenge:createHash('sha256').update(verifier).digest('base64url'),code_challenge_method:'S256',...(provider==='gmail'?{access_type:'offline',prompt:'consent'}:{})}))target.searchParams.set(key,value);
+  return {authorizeUrl:target.href};
+ }
+ if(request.method==='GET'){
+  const saved=cookies[stateName];cookie(stateName,'',0);if(!saved)throw failure('Connection expired. Start again.',409);
+  let state;try{state=unseal(saved,config.secret,'oauth:'+provider);}catch{throw failure('Connection state was not valid.',403);}
+  if(state.owner!==user.id||state.nonce!==url.searchParams.get('state')||now().getTime()-state.at>600000||now().getTime()<state.at)throw failure('Connection state was not valid.',403);
+  if(url.searchParams.has('error'))return {redirect:config.origin+'/#connections'};
+  const code=url.searchParams.get('code');if(!code||code.length>4000)throw failure('The provider did not return an authorization code.');
+  const tokens=cleanTokens(await tokenRequest(config,{grant_type:'authorization_code',code,redirect_uri:config.callback,code_verifier:state.verifier},transport));
+  if(typeof tokens.scope!=='string'||config.scopes.filter(s=>s!=='offline.access').some(s=>!tokens.scope.split(' ').map(value=>value==='https://www.googleapis.com/auth/userinfo.email'?'email':value).includes(s)))throw failure('Required provider permissions were not granted.',403);
+  const identity=await providerJSON(config.identity,{headers:{Authorization:'Bearer '+tokens.access_token}},transport);const account=provider==='x'?identity.data?.id:identity.sub,label=provider==='x'?identity.data?.username:identity.email;
+  if(typeof account!=='string'||!account||typeof label!=='string'||!label||provider==='gmail'&&identity.email_verified!==true)throw failure('Could not verify the connected account.',502);
+  const row={user_id:user.id,provider,account_id:account,label,token_cipher:seal(tokens,config.secret,user.id+':'+provider+':'+account),expires_at:new Date(tokens.expiresAt).toISOString(),revoked_at:null};
+  const existing=await db.from('pull_channel_connections').select('id').eq('user_id',user.id).eq('provider',provider).maybeSingle();if(existing.error)throw failure('Could not save the connection.',503);
+  const result=existing.data?await db.from('pull_channel_connections').update(row).eq('user_id',user.id).eq('id',existing.data.id).select('id').single():await db.from('pull_channel_connections').insert(row).select('id').single();if(result.error)throw failure('Could not save the connection. Try connecting again.',503);
+  return {redirect:config.origin+'/#connections'};
+ }
+ if(body.action!=='send'||Object.keys(body).some(k=>!['action','provider','connectionId','prospectId','revision','consent','consentEvidence'].includes(k))||!UUID.test(body.connectionId||'')||typeof body.prospectId!=='string'||!Number.isSafeInteger(body.revision))throw failure('Review one message before sending.');
+ const stored=await db.from('pull_workspaces').select('payload,revision').eq('user_id',user.id).maybeSingle();if(stored.error)throw failure('Could not check the saved draft.',503);if(!stored.data||stored.data.revision!==body.revision)throw failure('Load the latest saved workspace before sending.',409);
+ const envelope=deliveryEnvelope(stored.data.payload,body.prospectId,body,now());
+ const found=await db.from('pull_channel_connections').select('id,provider,account_id,label,token_cipher,revoked_at').eq('user_id',user.id).eq('id',body.connectionId).eq('provider',provider).maybeSingle();if(found.error||!found.data||found.data.revoked_at)throw failure('Reconnect this sending account.',409);const connection=found.data,binding=user.id+':'+provider+':'+connection.account_id;
+ const digest=createHash('sha256').update(JSON.stringify([connection.id,envelope])).digest('hex');
+ const reserved=await db.rpc('reserve_pull_delivery',{p_connection:connection.id,p_key:digest,p_recipient:envelope.recipient,p_prospect:body.prospectId,p_revision:body.revision,p_consent:body.consentEvidence.trim()});
+ if(reserved.error)throw failure('Could not reserve this send. Nothing was submitted.',503);
+ if(!reserved.data?.claimed)return {delivery:reserved.data,duplicate:true};
+ const job=reserved.data.id;let attempted=false;
+ try{
+  let tokens=unseal(connection.token_cipher,config.secret,binding);
+  if(tokens.expiresAt<=now().getTime()+30000){if(!tokens.refresh_token)throw failure('Reconnect this account before sending.',409);tokens=cleanTokens(await tokenRequest(config,{grant_type:'refresh_token',refresh_token:tokens.refresh_token},transport),tokens);const updated=await db.from('pull_channel_connections').update({token_cipher:seal(tokens,config.secret,binding),expires_at:new Date(tokens.expiresAt).toISOString()}).eq('user_id',user.id).eq('id',connection.id).eq('token_cipher',connection.token_cipher).select('id').maybeSingle();if(updated.error||!updated.data)throw failure('The connection changed. Check it before sending.',409);}
+  // Recheck suppression, draft and connection immediately before the irreversible request.
+  const current=await db.from('pull_workspaces').select('payload,revision').eq('user_id',user.id).maybeSingle();const active=await db.from('pull_channel_connections').select('revoked_at').eq('user_id',user.id).eq('id',connection.id).maybeSingle();
+  if(current.error||current.data?.revision!==body.revision||active.error||!active.data||active.data.revoked_at)throw failure('Your workspace or connection changed before sending.',409);deliveryEnvelope(current.data.payload,body.prospectId,body,now());
+  let target,payload;if(provider==='gmail'){target='https://gmail.googleapis.com/gmail/v1/users/me/messages/send';payload={raw:gmailRaw(connection.label,envelope)};}else{const recipient=await providerJSON('https://api.x.com/2/users/by/username/'+encodeURIComponent(envelope.recipient),{headers:{Authorization:'Bearer '+tokens.access_token}},transport);if(!/^\d+$/.test(recipient.data?.id||''))throw failure('Could not verify the X recipient.',502);target='https://api.x.com/2/dm_conversations/with/'+recipient.data.id+'/messages';payload={text:envelope.body};}
+  attempted=true;const response=await transport(target,{method:'POST',headers:{Authorization:'Bearer '+tokens.access_token,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(12000),redirect:'error'});
+  if(!response.ok){attempted=response.status>=500||response.status===408;throw failure(response.status===429?'Provider rate limit reached. No automatic retry was made.':'Provider rejected the message. No automatic retry was made.',response.status===429?429:502);}
+  const receipt=await response.json(),id=provider==='gmail'?receipt.id:receipt.data?.dm_event_id;if(typeof id!=='string'||!id)throw failure('Provider response lacked a receipt. Check the platform before retrying.',502);
+  const finished=await db.rpc('finish_pull_delivery',{p_job:job,p_status:'submitted',p_receipt:id});if(finished.error)throw failure('Message submitted but receipt could not be recorded. Check the provider before retrying.',503);
+  return {delivery:finished.data};
+ }catch(error){await db.rpc('finish_pull_delivery',{p_job:job,p_status:attempted?'uncertain':'failed',p_receipt:''});throw error;}
+}

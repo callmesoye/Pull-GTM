@@ -1,3 +1,4 @@
+import {channelRequest} from './channels.js';
 import {createClient} from './supabase-rest.js';
 import {createHash,randomBytes} from 'node:crypto';
 import {aiConfiguration,prepareAI,generateReply} from './ai.js';
@@ -109,7 +110,10 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       }
       const user=await verified();
       if(!user)return reply(401,{error:'Sign in to access your saved workspace.'});
-      if(request.headers.get('x-pull-account')!==user.id)return reply(409,{code:'ACCOUNT_CHANGED',error:'Your account changed in another tab. Open your cloud workspace again.'});
+      if(request.headers.get('x-pull-account')!==user.id&&!(resource==='channels'&&request.method==='GET'&&url.searchParams.has('callback')))return reply(409,{code:'ACCOUNT_CHANGED',error:'Your account changed in another tab. Open your cloud workspace again.'});
+      if(resource==='channels'){
+        try{const result=await channelRequest({request,user,db:client(access),env,body,cookies:Object.fromEntries(Object.entries(cookies).map(([k,v])=>[k.startsWith(prefix)?k.slice(prefix.length):k,v])),cookie,transport,now});if(result.redirect){const h=new Headers({'Location':result.redirect,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'});for(const c of outCookies)h.append('Set-Cookie',c);return new Response(null,{status:303,headers:h});}return reply(200,result);}catch(error){return reply(error.status||503,{error:error.status?error.message:'Connection or delivery is unavailable. Check your channel before retrying.'});}
+      }
       if(resource==='discovery'){
         let input;try{input=discoveryInput(body);}catch(error){return reply(400,{error:error.message});}
         const search=searchConfiguration(env);
@@ -204,5 +208,5 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       return reply(200,result.data);
     } catch {return reply(503,{error:'The cloud service is temporarily unavailable. Your local work is safe.'});}
   }
-  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents'),agentChat:r=>handle(r,'agent-chat'),discovery:r=>handle(r,'discovery')};
+  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents'),agentChat:r=>handle(r,'agent-chat'),discovery:r=>handle(r,'discovery'),channels:r=>handle(r,'channels')};
 }

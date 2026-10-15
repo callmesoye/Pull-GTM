@@ -51,3 +51,9 @@ Remaining: Google login is disabled; social OAuth/sending, Stripe/admin, busines
 Added enabled-workflow listing and proposals to the own-agent MCP relay, in-chat approval cards, and an owner-authenticated execution path. Exact workspace/workflow snapshots, token revocation and expiry, account ownership, atomic receipts and duplicate-approval handling are enforced. The agent cannot approve or send. Existing audience review and draft-suggestion operations are supported; direct social delivery is not implemented.
 
 252 tests and syntax checks passed. The action SQL was executed in isolated PGlite, then migration `owner_approved_agent_workflows` and the rollback-only production verification passed. MCP version 7 deployed ACTIVE. External client/model polling is still conditional on the user's running agent; no external-agent session is claimed tested by the controlled tests.
+
+## 15 October 2026 — native delivery adapters, pending owner app setup
+
+Added Gmail email and X opt-in DM adapters, provider OAuth/PKCE, owner-bound AES-GCM credential storage, refresh handling, per-message approval, duplicate reservations, suppression/revision rechecks, and submission receipts. The UI labels absent developer applications as setup required; no provider has been activated or connected merely by this release. The owner confirmed no developer apps exist yet.
+
+The channel database migration and rollback-only production checks passed. Controlled provider tests cover callback identity/scopes, exact email and X payloads, duplicates, revocation, stale workspaces, definite refusal, rate limits, and uncertain timeouts without blind retries. These tests do not prove a real-provider OAuth or delivery. No real recipient was messaged during testing. See NATIVE-DELIVERY.md for the exact owner setup and remaining execution gates.

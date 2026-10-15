@@ -1,0 +1,32 @@
+begin;
+do $$
+declare a uuid:=gen_random_uuid(); b uuid:=gen_random_uuid(); c uuid:=gen_random_uuid(); base jsonb:='{"version":1,"prospects":[],"shortlist":[],"drafts":{},"audit":[]}'; r jsonb; job uuid;
+begin
+ insert into auth.users(id,email,is_anonymous) values(a,'channel-a@example.invalid',false),(b,'channel-b@example.invalid',false);
+ insert into public.pull_workspaces(user_id,payload,revision) values(a,base,1);
+ insert into public.pull_channel_connections(id,user_id,provider,account_id,label,token_cipher,expires_at) values(c,a,'gmail','qa','sender@example.invalid','encrypted-qa-placeholder',now()+interval '1 hour');
+ perform set_config('request.jwt.claim.sub',b::text,true);perform set_config('request.jwt.claims','{"is_anonymous":false}',true);
+ begin perform public.reserve_pull_delivery(c,repeat('a',64),'recipient@example.invalid','p',1,'Recipient requested this QA reply.');raise exception 'Cross-owner send reservation accepted' using errcode='XX000';exception when sqlstate 'P0001' then null;end;
+ perform set_config('request.jwt.claim.sub',a::text,true);
+ r:=public.reserve_pull_delivery(c,repeat('a',64),'recipient@example.invalid','p',1,'Recipient requested this QA reply.');job:=(r->>'id')::uuid;
+ if r->>'claimed'<>'true' then raise exception 'Reservation failed';end if;
+ if public.reserve_pull_delivery(c,repeat('a',64),'recipient@example.invalid','p',1,'Recipient requested this QA reply.')->>'claimed'<>'false' then raise exception 'Duplicate reservation accepted';end if;
+ begin perform public.reserve_pull_delivery(c,repeat('b',64),'other@example.invalid','q',1,'Recipient requested this QA reply.');raise exception 'Overlapping connection reservation accepted' using errcode='XX000';exception when sqlstate 'P0001' then null;end;
+ perform public.finish_pull_delivery(job,'submitted','qa-provider-receipt');
+ if public.reserve_pull_delivery(c,repeat('a',64),'recipient@example.invalid','p',1,'Recipient requested this QA reply.')->>'claimed'<>'false' then raise exception 'Submitted message retried';end if;
+ r:=public.reserve_pull_delivery(c,repeat('b',64),'recipient@example.invalid','p',1,'Recipient requested this QA reply.');job:=(r->>'id')::uuid;perform public.finish_pull_delivery(job,'uncertain','');
+ if public.reserve_pull_delivery(c,repeat('b',64),'recipient@example.invalid','p',1,'Recipient requested this QA reply.')->>'claimed'<>'false' then raise exception 'Uncertain message retried';end if;
+ r:=public.reserve_pull_delivery(c,repeat('c',64),'recipient@example.invalid','p',1,'Recipient requested this QA reply.');job:=(r->>'id')::uuid;perform public.finish_pull_delivery(job,'failed','');
+ update public.pull_delivery_jobs set finished_at=now()-interval '2 minutes' where id=job;
+ if public.reserve_pull_delivery(c,repeat('c',64),'recipient@example.invalid','p',1,'Recipient requested this QA reply.')->>'claimed'<>'true' then raise exception 'Explicit safe retry failed';end if;
+ perform public.finish_pull_delivery(job,'failed','');update public.pull_channel_connections set revoked_at=now() where id=c;
+ begin perform public.reserve_pull_delivery(c,repeat('d',64),'recipient@example.invalid','p',1,'Recipient requested this QA reply.');raise exception 'Revoked connection accepted' using errcode='XX000';exception when sqlstate 'P0001' then null;end;
+ if has_table_privilege('authenticated','public.pull_delivery_jobs','INSERT') or has_table_privilege('anon','public.pull_channel_connections','SELECT') then raise exception 'Unexpected public channel grant';end if;
+ perform set_config('pull_test.channel_a',a::text,true);perform set_config('pull_test.channel_b',b::text,true);
+end;$$;
+set local role authenticated;
+select set_config('request.jwt.claim.sub',current_setting('pull_test.channel_b'),true);
+do $$begin if exists(select 1 from public.pull_channel_connections) or exists(select 1 from public.pull_delivery_jobs) then raise exception 'Cross-owner data visible';end if;end;$$;
+reset role;
+select 'PASS: channel reservation, receipts, isolation and explicit retry; all fixtures rolled back' as verification;
+rollback;
