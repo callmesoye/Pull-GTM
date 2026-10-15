@@ -14,14 +14,14 @@ import {AccountGuard} from '../dist/cloud.js';
 
 // Run the real controller with a small DOM adapter. These checks exercise route,
 // import, filter, and account transitions without needing a model or cloud account.
-async function workspace() {
+async function workspace(initialHash='') {
   const elements=new Map(),events=new Map(),windowEvents=new Map(),calls=[];
   const element=selector=>{
     if(!elements.has(selector))elements.set(selector,{innerHTML:'',textContent:'',dataset:{},hidden:false,open:false,value:'',attributes:{},events:new Map(),classList:{toggle(){},add(){},remove(){}},setAttribute(key,value){this.attributes[key]=value;},insertAdjacentHTML(_where,html){this.innerHTML+=html;},querySelector:child=>element(selector+' '+child),querySelectorAll:()=>[],focus(){this.focused=true;},showModal(){this.open=true;},close(){this.open=false;},addEventListener(name,fn){this.events.set(name,fn);}});
     return elements.get(selector);
   };
   const document={body:{dataset:{}},querySelector:element,querySelectorAll:()=>[],addEventListener(name,fn){events.set(name,[...(events.get(name)||[]),fn]);}};
-  const location={hash:'',protocol:'https:',pathname:'/',search:''};
+  const location={hash:initialHash,protocol:'https:',pathname:'/',search:''};
   const context={...engine,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
   vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData}),update:changes=>{if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
@@ -226,3 +226,5 @@ test('Search progress reports the requested count and its shortfall without plac
   app.navigate('prospects');const html=element('#view-content').innerHTML;
   assert.match(html,/0 of 30 requested prospects found/);assert.match(html,/30 still needed/);assert.doesNotMatch(html,/Unnamed prospect/);
 });
+
+ test('Direct Buyers links check discovery readiness on initial load',async()=>{const {calls}=await workspace('#prospects');assert.ok(calls.includes('discovery'));});

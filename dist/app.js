@@ -370,6 +370,7 @@ const authResult=location.hash==='#auth=success'?'success':location.hash==='#aut
 if(authResult){try{const pending=JSON.parse(sessionStorage.getItem('pull-gtm-oauth-workspace'));sessionStorage.removeItem('pull-gtm-oauth-workspace');if(pending&&Number.isFinite(pending.at)&&Date.now()-pending.at>=0&&Date.now()-pending.at<600000){state={...structuredClone(defaults),...validateWorkspace(pending.workspace),remember:Boolean(pending.workspace.remember)};workspaceOwner=typeof pending.owner==='string'?pending.owner:null;}}catch{}}
 if(authResult||/^#access_token=/.test(location.hash))history.replaceState(null,'',location.pathname+location.search+'#home');
 render();cloudLabel();
+if(view==='prospects')refreshDiscovery();
 refreshAccount().then(()=>{if(view==='settings'){render();loadSettingsProfile();}if(view==='automations')loadAutomations();if(view==='assistant')refreshAIStatus();if(view==='connect')render();if(authResult){account();toast(authResult==='success'?'Signed in with Google.':'Google sign-in did not finish. Try again or use email.');}});
 
 
