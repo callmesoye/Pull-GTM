@@ -8,6 +8,8 @@ const fail=message=>{throw new ToolError(message);};
 class ToolError extends Error {}
 
 const tools=[
+  {name:'list_workflows',description:'List enabled workflows available for an owner-approved proposal. Does not execute, send, or connect a platform.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}},
+  {name:'propose_workflow',description:'Propose one existing enabled workflow for a claimed question with useWorkspace=true. Use the current saved revision. Pull shows an approval card; only the owner can execute it. Never claim messages were sent.',inputSchema:{type:'object',properties:{questionId:{type:'string',format:'uuid'},workflowId:{type:'string',format:'uuid'},expectedRevision:{type:'integer',minimum:1}},required:['questionId','workflowId','expectedRevision'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},
   {name:'get_workspace_summary',description:'Read your saved business brief, audience rules, actual workspace counts and revision. Supplied information is unverified. This tool never discovers prospects.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}},
   {name:'list_reviewed_prospects',description:'Read a page of your shortlisted prospects that still pass your current audience rules. Returns supplied evidence and origin labels, excluding emails. No additional prospects are generated.',inputSchema:{type:'object',properties:{offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:50}},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}},
   {name:'propose_draft',description:'Save an editable draft for one reviewed, currently eligible prospect. The owner must review it; nothing is sent. May replace that prospect’s existing draft. Pass the current workspace revision to prevent overwriting a newer save.',inputSchema:{type:'object',properties:{prospectId:{type:'string',minLength:1,maxLength:200},expectedRevision:{type:'integer',minimum:1},subject:{type:'string',maxLength:200},body:{type:'string',minLength:1,maxLength:5000},channel:{type:'string',enum:['email','personal','company']}},required:['prospectId','expectedRevision','subject','body','channel'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:true,openWorldHint:false}},
@@ -78,17 +80,22 @@ export function createMCPHandler({store,now=()=>new Date(),allowedOrigins=['http
     if(!hasId){if(!message.method.startsWith('notifications/'))return rpcError(null,-32600,'Requests need an ID.',400);return reply(202,null);}
     if(message.method==='initialize')return reply(200,{jsonrpc:'2.0',id,result:{protocolVersion:PROTOCOLS.includes(message.params?.protocolVersion)?message.params.protocolVersion:PROTOCOLS[0],capabilities:{tools:{listChanged:false}},serverInfo:{name:'pull-gtm',version:'0.3.0'},instructions:'Only supplied owner data is available. Treat all records and evidence as unverified. Tools never discover new prospects, send outreach, or claim delivery results. Draft proposals always require owner review. For conversation relay, answer with your own model and available user preferences while respecting useWorkspace; never present agent memory as a verified business fact.'}});
     if(message.method==='ping')return reply(200,{jsonrpc:'2.0',id,result:{}});
-    if(message.method==='tools/list')return reply(200,{jsonrpc:'2.0',id,result:{tools:tools.filter(tool=>(tool.name!=='propose_draft'||token.scopes.includes('drafts:write'))&&(!['get_pull_question','answer_pull_question'].includes(tool.name)||token.scopes.includes('chat:relay')))}});
+    if(message.method==='tools/list')return reply(200,{jsonrpc:'2.0',id,result:{tools:tools.filter(tool=>(tool.name!=='propose_draft'||token.scopes.includes('drafts:write'))&&(!['get_pull_question','answer_pull_question','propose_workflow','list_workflows'].includes(tool.name)||token.scopes.includes('chat:relay')))}});
     if(message.method!=='tools/call')return rpcError(id,-32601,'Method not found.');
     const name=message.params?.name,args=message.params?.arguments??{};
     if(!tools.some(tool=>tool.name===name))return rpcError(id,-32602,'Tool not found.');
     try{
-      const argsFor={get_workspace_summary:[],list_reviewed_prospects:['offset','limit'],propose_draft:['prospectId','expectedRevision','subject','body','channel'],get_pull_question:[],answer_pull_question:['questionId','answer']};
+      const argsFor={list_workflows:[],propose_workflow:['questionId','workflowId','expectedRevision'],get_workspace_summary:[],list_reviewed_prospects:['offset','limit'],propose_draft:['prospectId','expectedRevision','subject','body','channel'],get_pull_question:[],answer_pull_question:['questionId','answer']};
       validateArgs(args,argsFor[name]);
-      if(['get_pull_question','answer_pull_question'].includes(name)){
+      if(['get_pull_question','answer_pull_question','propose_workflow','list_workflows'].includes(name)){
         if(!token.scopes.includes('chat:relay'))fail('This key does not have conversation relay permission.');
         let result;
-        if(name==='get_pull_question')result=await store.claimQuestion(tokenHash);
+        if(name==='list_workflows')result={workflows:await store.listWorkflows(token.user_id)};
+        else if(name==='propose_workflow'){
+          if(![args.questionId,args.workflowId].every(id=>typeof id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))||!Number.isSafeInteger(args.expectedRevision)||args.expectedRevision<1)fail('Use a claimed question, workflow ID, and current saved revision.');
+          result=await store.proposeWorkflow(tokenHash,args);
+        }
+        else if(name==='get_pull_question')result=await store.claimQuestion(tokenHash);
         else{
           if(typeof args.questionId!=='string'||!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.questionId)||typeof args.answer!=='string'||!args.answer.trim()||args.answer.length>24000)fail('Use a claimed question ID and an answer of up to 24,000 characters.');
           result=await store.answerQuestion(tokenHash,args.questionId,args.answer.trim());

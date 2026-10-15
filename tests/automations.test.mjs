@@ -19,6 +19,7 @@ const request=(body,{user=A,account=user,origin='https://pull.example',cookie,me
 function fixture({anonymous=false,outage=false,conflict='',refreshStatus=0}={}) {
   const workflows=new Map([[WA,workflow()],[WB,workflow(WB,B)],[WD,workflow(WD,A,'draft_suggestions','on_import')]]);
   const rows=new Map([[A,{user_id:A,payload:workspace(),revision:1,updated_at:at}],[B,{user_id:B,payload:{...workspace(),identity:'Private B'},revision:1,updated_at:at}]]),runs=[],calls=[];
+  const proposals=new Map();
   const transport=async(input,options)=>{
     const url=new URL(input),body=options.body?JSON.parse(options.body):null;calls.push({url,options,body});
     if(outage)throw new Error('Offline');
@@ -26,7 +27,7 @@ function fixture({anonymous=false,outage=false,conflict='',refreshStatus=0}={}) 
     if(url.pathname==='/auth/v1/user')return owner?Response.json({id:owner,is_anonymous:anonymous}):Response.json({},{status:401});
     if(url.pathname==='/auth/v1/token')return refreshStatus?Response.json({},{status:refreshStatus}):Response.json({access_token:'valid-'+A,refresh_token:'refresh-'+A,expires_in:3600});
     if(!owner)return Response.json({},{status:401});
-    if(url.pathname==='/rest/v1/rpc/pull_apply_automations'){
+    if(['/rest/v1/rpc/pull_apply_automations','/rest/v1/rpc/execute_pull_agent_workflow'].includes(url.pathname)){
       const row=rows.get(owner),before=structuredClone(row);
       if(conflict==='workspace'){rows.set(owner,{...row,payload:{...row.payload,identity:'Newer cloud work'},revision:2});return Response.json({code:'P0001'},{status:400});}
       if(conflict==='definition')return Response.json({code:'P0001'},{status:400});
@@ -47,12 +48,13 @@ function fixture({anonymous=false,outage=false,conflict='',refreshStatus=0}={}) 
       if(options.method==='PATCH'){for(const row of selected)workflows.set(row.id,{...row,...body});return Response.json(selected.map(row=>project(workflows.get(row.id))));}
       return Response.json(selected.map(project));
     }
+    if(table==='pull_agent_chat_requests')return Response.json([...proposals.values()].filter(r=>r.user_id===owner&&match(r)).map(project));
     if(table==='pull_workspaces')return Response.json([...rows.values()].filter(r=>r.user_id===owner&&match(r)).map(project));
     if(table==='pull_automation_runs')return Response.json(runs.filter(r=>r.user_id===owner&&match(r)).slice(-20).reverse().map(project));
     throw new Error('Unexpected table');
   };
   const backend=createAutomationsBackend({env,now:()=>new Date(at),clientFactory:(url,key,options)=>createClient(url,key,{...options,global:{...options.global,fetch:transport}})});
-  return {backend,workflows,rows,runs,calls};
+  return {backend,workflows,rows,runs,calls,proposals};
 }
 
 test('Audience review reports fit and retains only currently eligible approvals',()=>{
@@ -161,4 +163,19 @@ test('Temporary auth limits preserve browser cookies and never touch cloud data'
 test('Automation view escapes user input and clearly describes available behavior',()=>{
   const w={...workflow(),name:'<img src=x onerror=alert(1)>'};const html=renderAutomationView({configured:true,signedIn:true,workflows:[w],runs:[]});assert.ok(!html.includes('<img src=x'));assert.ok(html.includes('&lt;img'));assert.ok(html.includes('data-action="automation-run"'));assert.ok(html.includes('Nothing sends messages'));assert.match(html,/After.*import.*(?:saved|save).*cloud/is);
   assert.ok(renderAutomationView({configured:true,signedIn:false}).includes('Sign in to create workflows'));
+});
+
+test('Owner approval executes only the server-stored workflow proposal',async()=>{
+ const f=fixture(),id='55555555-5555-4555-8555-555555555555';
+ f.proposals.set(id,{id,user_id:A,expires_at:'2026-11-01T00:00:00Z',workflow_proposal:{workflowId:WA,revision:1,workflowUpdatedAt:at}});
+ let response=await f.backend(request({action:'run_proposal',questionId:id,id:WB}));assert.equal(response.status,400);assert.equal(f.runs.length,0);
+ response=await f.backend(request({action:'run_proposal',questionId:id},{user:B}));assert.equal(response.status,404);assert.equal(f.runs.length,0);
+ response=await f.backend(request({action:'run_proposal',questionId:id}));assert.equal(response.status,200);assert.equal(f.runs.length,1);assert.equal(f.rows.get(A).revision,2);
+ assert.ok(f.calls.some(c=>c.url.pathname.endsWith('execute_pull_agent_workflow')&&c.body.p_question_id===id));
+});
+test('Stale and completed proposals cannot rerun workflows',async()=>{
+ const f=fixture(),id='55555555-5555-4555-8555-555555555555';
+ const proposal={id,user_id:A,expires_at:'2026-11-01T00:00:00Z',workflow_proposal:{workflowId:WA,revision:4,workflowUpdatedAt:at}};f.proposals.set(id,proposal);
+ assert.equal((await f.backend(request({action:'run_proposal',questionId:id}))).status,409);assert.equal(f.runs.length,0);
+ proposal.workflow_result={revision:2,updated_at:at,runs:[]};const response=await f.backend(request({action:'run_proposal',questionId:id}));assert.equal((await response.json()).alreadyExecuted,true);assert.equal(f.runs.length,0);
 });

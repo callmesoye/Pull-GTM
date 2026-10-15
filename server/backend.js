@@ -159,7 +159,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       if(resource==='agent-chat'){
         const db=client(access).from('pull_agent_chat_requests');
         if(request.method==='GET'){
-          const result=await db.select('id,question,use_workspace,answer,status,created_at,claimed_at,answered_at,expires_at').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20).all();
+          const result=await db.select('id,question,use_workspace,answer,status,created_at,claimed_at,answered_at,expires_at,workflow_proposal,workflow_result').eq('user_id',user.id).order('created_at',{ascending:false}).limit(20).all();
           if(result.error)return reply(503,{error:'Your agent conversation is temporarily unavailable.'});
           return reply(200,{messages:result.data.reverse()});
         }
@@ -170,7 +170,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
         const workspace=await client(access).from('pull_workspaces').select('revision').eq('user_id',user.id).maybeSingle();
         if(workspace.error)return reply(503,{error:'Could not verify your saved workspace.'});
         if(!workspace.data)return reply(409,{error:'Save your workspace to the cloud before asking your agent here.'});
-        const result=await db.insert({user_id:user.id,question:body.question.trim(),use_workspace:body.use_workspace}).select('id,question,use_workspace,answer,status,created_at,claimed_at,answered_at,expires_at').single();
+        const result=await db.insert({user_id:user.id,question:body.question.trim(),use_workspace:body.use_workspace}).select('id,question,use_workspace,answer,status,created_at,claimed_at,answered_at,expires_at,workflow_proposal,workflow_result').single();
         if(result.error?.code==='54000')return reply(429,{error:'Wait for your agent to answer, or try again later.'});
         if(result.error||!result.data)return reply(503,{error:'Could not queue your question. Nothing was sent to an agent.'});
         return reply(201,{message:result.data});

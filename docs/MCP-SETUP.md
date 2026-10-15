@@ -46,3 +46,9 @@ Each question can allow or disallow use of the saved Pull workspace. The agent m
 Leaving the wizard or changing accounts clears the displayed key. If you lose it, revoke the old key and create another. A listed active key does not itself prove a client connection. If the list is empty after connecting, confirm that you saved the right account’s workspace and shortlisted eligible prospects.
 
 For help, [email Abisoye](mailto:gbosheabisoye.ag@gmail.com) or [book a walkthrough](https://calendar.app.google/rhwGJ6n3zaRy5tdr8). Share the error and the step where it happened, without your key or prospect list.
+
+## Approve an automation inside chat
+
+A relay agent can call `list_workflows` and `propose_workflow` for an enabled workflow, using a claimed question ID and the current saved workspace revision. The question must permit workspace access. Pull displays the workflow name, operation and destination in the conversation. The owner chooses **Approve and run**; the agent cannot approve it. Proposals expire with the question. Changed workspaces/workflows or revoked agent access invalidate pending execution. Repeated approval returns the recorded receipt without running again.
+
+This executes audience review or editable draft suggestions. It does not send social messages, connect accounts, or create a background schedule. Create an enabled workflow in Automations first. Direct sending remains dependent on channel authorization and an implemented delivery adapter.

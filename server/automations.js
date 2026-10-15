@@ -81,7 +81,7 @@ export function createAutomationsBackend({env=process.env,clientFactory=createCl
     if(!config)return request.method==='GET'?reply(200,{configured:false,workflows:[],runs:[]}):reply(503,{error:'Cloud automations are not configured yet.'});
     const makeClient=token=>clientFactory(config.url,config.key,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{headers:token?{Authorization:'Bearer '+token}:{},fetch:(target,options={})=>transport(target,{...options,signal:options.signal||AbortSignal.timeout(15000),redirect:'error'})}});
     try {
-      const body=request.method==='POST'?await bodyJSON(request):null;
+      let body=request.method==='POST'?await bodyJSON(request):null;
       const saved=cookies(request),base=makeClient();let access=saved[prefix+'access'],refresh=saved[prefix+'refresh'],renewedSession=null;
       let verified=access?await base.auth.getUser(access):{data:{user:null},error:{status:401}};
       if(verified.error&&[400,401,403].includes(verified.error.status)&&refresh){
@@ -103,6 +103,18 @@ export function createAutomationsBackend({env=process.env,clientFactory=createCl
         return {configured:true,workflows:workflows.data,runs:runs.data};
       };
       if(request.method==='GET')return reply(200,await list());
+      let proposalQuestion=null,proposalSnapshot=null;
+      if(body.action==='run_proposal'){
+        if(Object.keys(body).some(k=>!['action','questionId'].includes(k))||!UUID.test(body.questionId||''))return reply(400,{error:'Choose an agent workflow proposal.'});
+        const proposal=await db.from('pull_agent_chat_requests').select('id,workflow_proposal,workflow_result,expires_at').eq('user_id',user.id).eq('id',body.questionId).maybeSingle();
+        if(proposal.error)throw unavailable();
+        if(!proposal.data)return reply(404,{error:'This proposal is unavailable.'});
+        if(proposal.data.workflow_result)return reply(200,{alreadyExecuted:true,workspace:{revision:proposal.data.workflow_result.revision,updated_at:proposal.data.workflow_result.updated_at},runs:proposal.data.workflow_result.runs,results:[]});
+        const proposed=proposal.data.workflow_proposal;
+        if(!object(proposed)||!UUID.test(proposed.workflowId||'')||!Number.isSafeInteger(proposed.revision)||new Date(proposal.data.expires_at)<=now())return reply(409,{error:'This proposal expired. Ask your agent for a new one.'});
+        proposalQuestion=body.questionId;proposalSnapshot=proposed;
+        body={action:'run',id:proposed.workflowId,revision:proposed.revision};
+      }
       if(!['create','update','run','on_import'].includes(body.action))return reply(400,{error:'Choose a supported automation action.'});
       if(body.action==='create'){
         const {action,...values}=body;let definitionRow;try{definitionRow=definition(values);}catch(error){return reply(400,{error:error.message});}
@@ -125,6 +137,7 @@ export function createAutomationsBackend({env=process.env,clientFactory=createCl
       }else{
         const result=await db.from('pull_automations').select(WORKFLOW_FIELDS).eq('user_id',user.id).eq('archived',false).eq('enabled',true).eq('trigger','on_import').order('created_at').all();if(result.error)throw unavailable();workflows=result.data;
       }
+      if(proposalSnapshot&&workflows.some(w=>w.updated_at!==proposalSnapshot.workflowUpdatedAt&&Date.parse(w.updated_at)!==Date.parse(proposalSnapshot.workflowUpdatedAt)))return reply(409,{error:'The workflow changed. Ask your agent for a new proposal.'});
       if(!workflows.every(validWorkflow))throw unavailable();
       if(workflows.some(w=>!w.enabled||w.archived))return reply(409,{error:'Enable this workflow before running it.'});
       if(!workflows.length)return reply(200,{results:[],workspace:null,runs:[]});
@@ -134,7 +147,7 @@ export function createAutomationsBackend({env=process.env,clientFactory=createCl
       let payload=validateWorkspace(stored.data.payload);const results=[],runInputs=[],at=now();
       if(body.action==='on_import'&&payload.mode!=='import')return reply(400,{error:'Save an imported prospect list before running after-import workflows.'});
       for(const workflow of workflows){const applied=applyAutomation(workflow,payload,at);payload=applied.payload;const counts={...applied.counts,data_origin:payload.mode};results.push({workflow_id:workflow.id,name:workflow.name,kind:workflow.kind,counts});runInputs.push({id:workflow.id,updated_at:workflow.updated_at,counts});}
-      const committed=await db.rpc('pull_apply_automations',{p_revision:body.revision,p_payload:payload,p_runs:runInputs});
+      const committed=await db.rpc(proposalQuestion?'execute_pull_agent_workflow':'pull_apply_automations',{...(proposalQuestion?{p_question_id:proposalQuestion}:{}),p_revision:body.revision,p_payload:payload,p_runs:runInputs});
       if(committed.error?.code==='P0001')return reply(409,{code:'WORKSPACE_CHANGED',error:'Your workspace or workflow changed. Reload before running it again.'});
       if(committed.error||!object(committed.data)||committed.data.revision!==body.revision+1||!Array.isArray(committed.data.runs)||typeof committed.data.updated_at!=='string')throw unavailable();
       return reply(200,{results,workspace:{revision:committed.data.revision,updated_at:committed.data.updated_at},runs:committed.data.runs});

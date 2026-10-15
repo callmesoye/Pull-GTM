@@ -45,3 +45,9 @@ Owner authorized release; existing repository files and saved workspace data wer
 Follow-up fixes initial Buyers deep-link readiness; 247 tests and syntax checks passed. Serper readiness is configured; a live Founder / Software / Lagos, Nigeria search completed but returned zero full-evidence matches, with an honest shortfall. This establishes provider execution, not sufficient discovery recall or guaranteed counts. No cloud workspace save was performed during the browser check.
 
 Remaining: Google login is disabled; social OAuth/sending, Stripe/admin, business/opportunity retrieval, resumable research, and broader real-source relevance evaluation are not complete. Security advisor reported leaked-password protection disabled; internal usage tables intentionally have no client-facing RLS policies. Do not describe the full product as complete based on this release.
+
+## 15 October 2026 — owner-approved chat workflows
+
+Added enabled-workflow listing and proposals to the own-agent MCP relay, in-chat approval cards, and an owner-authenticated execution path. Exact workspace/workflow snapshots, token revocation and expiry, account ownership, atomic receipts and duplicate-approval handling are enforced. The agent cannot approve or send. Existing audience review and draft-suggestion operations are supported; direct social delivery is not implemented.
+
+252 tests and syntax checks passed. The action SQL was executed in isolated PGlite, then migration `owner_approved_agent_workflows` and the rollback-only production verification passed. MCP version 7 deployed ACTIVE. External client/model polling is still conditional on the user's running agent; no external-agent session is claimed tested by the controlled tests.

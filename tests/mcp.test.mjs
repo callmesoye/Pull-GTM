@@ -18,6 +18,8 @@ async function fixture({scopes=['workspace:read','drafts:write'],revoked=false,e
   const store={
     authenticate:async hash=>{calls.push(['auth',hash]);return hash===tokenHash?(limited?{limited:true}:structuredClone(token)):null;},
     loadWorkspace:async owner=>{calls.push(['load',owner]);return structuredClone(rows.get(owner)||null);},
+    listWorkflows:async owner=>{calls.push(['workflows',owner]);return [{id:'22222222-2222-4222-8222-222222222222',name:'Review audience',kind:'audience_review'}];},
+    proposeWorkflow:async(hash,args)=>{calls.push(['proposal',hash,args]);return {proposed:true,requiresOwnerApproval:true,sendsMessages:false};},
     claimQuestion:async hash=>{calls.push(['claim',hash]);return {pending:true,id:'11111111-1111-4111-8111-111111111111',question:'Help me plan.',useWorkspace:true};},
     answerQuestion:async(hash,id,answer)=>{calls.push(['answer',hash,id,answer]);return id==='11111111-1111-4111-8111-111111111111'?{answered:true,id}:{error:'QUESTION_UNAVAILABLE'};},
     commitDraft:async(hash,args)=>{
@@ -72,7 +74,7 @@ test('Conversation relay tools appear only with explicit permission and preserve
   assert.ok(!denied.calls.some(c=>c[0]==='claim'));
   const f=await fixture({scopes:['workspace:read','chat:relay']});
   const listed=await f.handler(request(rpc('tools/list')));
-  assert.deepEqual((await listed.json()).result.tools.map(t=>t.name),['get_workspace_summary','list_reviewed_prospects','get_pull_question','answer_pull_question']);
+  assert.deepEqual((await listed.json()).result.tools.map(t=>t.name),['list_workflows','propose_workflow','get_workspace_summary','list_reviewed_prospects','get_pull_question','answer_pull_question']);
   const claimed=await invoke(f,'get_pull_question');assert.equal(JSON.parse(claimed.message.result.content[0].text).useWorkspace,true);
   const answered=await invoke(f,'answer_pull_question',{questionId:'11111111-1111-4111-8111-111111111111',answer:'A tailored answer.'});
   assert.equal(JSON.parse(answered.message.result.content[0].text).answered,true);
@@ -131,4 +133,12 @@ test('The Supabase adapter filters reads by the token-derived owner and keeps cr
 });
 test('The agent qualification engine stays identical to the browser’s eligibility engine',async()=>{
   const [browser,agent]=await Promise.all([readFile(new URL('../dist/engine.js',import.meta.url),'utf8'),readFile(new URL('../supabase/functions/pull-mcp/engine.js',import.meta.url),'utf8')]);assert.equal(agent,browser);
+});
+
+test('Agent workflow proposal is scoped, validated and never executes a workflow',async()=>{
+ const read=await fixture();assert.equal((await invoke(read,'propose_workflow',{})).message.result.isError,true);
+ const f=await fixture({scopes:['workspace:read','chat:relay']});
+ assert.equal((await invoke(f,'propose_workflow',{questionId:'bad',workflowId:'bad',expectedRevision:3})).message.result.isError,true);
+ const result=await invoke(f,'propose_workflow',{questionId:'11111111-1111-4111-8111-111111111111',workflowId:'22222222-2222-4222-8222-222222222222',expectedRevision:3});
+ assert.equal(result.message.result.isError,false);assert.equal(f.calls.filter(c=>c[0]==='proposal').length,1);assert.equal(f.calls.filter(c=>c[0]==='commit').length,0);
 });

@@ -16,6 +16,8 @@ export function createAgentStore({url,key,transport=fetch}){
       const rows=await call('pull_workspaces?'+query);return rows[0]??null;
     },
     commitDraft:(tokenHash,args)=>call('rpc/commit_pull_agent_draft',{method:'POST',body:{p_token_hash:tokenHash,p_revision:args.expectedRevision,p_prospect_id:args.prospectId,p_subject:args.subject,p_body:args.body,p_channel:args.channel}}),
+    listWorkflows:owner=>call('pull_automations?'+new URLSearchParams({select:'id,name,kind,destination,updated_at',user_id:'eq.'+owner,enabled:'eq.true',archived:'eq.false',limit:'100'})),
+    proposeWorkflow:(tokenHash,args)=>call('rpc/propose_pull_agent_workflow',{method:'POST',body:{p_token_hash:tokenHash,p_question_id:args.questionId,p_workflow_id:args.workflowId,p_revision:args.expectedRevision}}),
     claimQuestion:tokenHash=>call('rpc/claim_pull_agent_question',{method:'POST',body:{p_token_hash:tokenHash}}),
     answerQuestion:(tokenHash,id,answer)=>call('rpc/answer_pull_agent_question',{method:'POST',body:{p_token_hash:tokenHash,p_question_id:id,p_answer:answer}})
   };

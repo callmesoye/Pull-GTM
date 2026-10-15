@@ -31,3 +31,9 @@ No integration bypasses platform rules. Future direct actions need explicit conn
 ## Billing and owner operations
 
 Stripe billing is not active. Do not collect card details or show a paid plan as purchased until a Stripe account, product and price IDs, Checkout, Customer Portal, signed webhook and subscription-state persistence have been configured and tested. Secret keys belong on the server, never in the browser or repository. A separate owner console needs explicit owner authentication and server-side role checks; hiding a button is insufficient. Until then, manage the private Supabase project and Vercel settings directly rather than presenting simulated admin controls.
+
+## Chat execution
+
+Own-agent conversation relay now supports proposals for existing enabled workflows. The owner reviews and approves in chat. Server execution uses the saved proposal, verifies the exact workspace revision and workflow version, and commits the run, workspace update and receipt together. Pending proposals require the agent access to remain valid. Duplicate approval cannot create duplicate runs. This extends the review/drafting operations above; it does not activate direct social sending.
+
+Apply `database/agent-actions.sql` after the agent-chat and automation migrations, then run `database/verify-agent-actions-rollback.sql`. Deploy the adjacent MCP handler/store and web API/UI together.
