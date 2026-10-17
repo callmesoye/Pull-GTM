@@ -13,6 +13,8 @@ export function channelConfiguration(env,provider){
  return {...p,provider,origin:app.origin,secret,clientId:env[p.prefix+'_CLIENT_ID'],clientSecret:env[p.prefix+'_CLIENT_SECRET'],callback:app.origin+'/api/channels?callback='+provider};
  }catch{return null;}
 }
+// This purpose-specific capability is never returned to the browser or provider.
+export function deliveryCapability(secret){if(typeof secret!=='string'||secret.length<32)throw failure('Sending authorization is unavailable.',503);return createHash('sha256').update('pull-delivery-receipt-v1\0'+secret).digest('hex');}
 export function seal(value,secret,binding){const iv=randomBytes(12),key=createHash('sha256').update('pull-channel-v1\0'+secret).digest(),c=createCipheriv('aes-256-gcm',key,iv);c.setAAD(Buffer.from(binding));const encrypted=Buffer.concat([c.update(JSON.stringify(value),'utf8'),c.final()]);return [iv,c.getAuthTag(),encrypted].map(b=>b.toString('base64url')).join('.');}
 export function unseal(value,secret,binding){const parts=String(value).split('.');if(parts.length!==3)throw failure('Reconnect this account.',409);const [iv,tag,data]=parts.map(x=>Buffer.from(x,'base64url'));const c=createDecipheriv('aes-256-gcm',createHash('sha256').update('pull-channel-v1\0'+secret).digest(),iv);c.setAAD(Buffer.from(binding));c.setAuthTag(tag);return JSON.parse(Buffer.concat([c.update(data),c.final()]).toString('utf8'));}
 function cleanTokens(value,old={}){if(typeof value.access_token!=='string'||!value.access_token||value.access_token.length>12000||!Number.isFinite(value.expires_in)||value.expires_in<1||value.expires_in>2678400)throw failure('The provider did not return usable access. Reconnect.',502);return {access_token:value.access_token,refresh_token:typeof value.refresh_token==='string'?value.refresh_token:old.refresh_token,scope:value.scope||old.scope,expiresAt:Date.now()+value.expires_in*1000};}
@@ -64,8 +66,9 @@ export async function channelRequest({request,user,db,env,body,cookies,cookie,tr
  const stored=await db.from('pull_workspaces').select('payload,revision').eq('user_id',user.id).maybeSingle();if(stored.error)throw failure('Could not check the saved draft.',503);if(!stored.data||stored.data.revision!==body.revision)throw failure('Load the latest saved workspace before sending.',409);
  const envelope=deliveryEnvelope(stored.data.payload,body.prospectId,body,now());
  const found=await db.from('pull_channel_connections').select('id,provider,account_id,label,token_cipher,revoked_at').eq('user_id',user.id).eq('id',body.connectionId).eq('provider',provider).maybeSingle();if(found.error||!found.data||found.data.revoked_at)throw failure('Reconnect this sending account.',409);const connection=found.data,binding=user.id+':'+provider+':'+connection.account_id;
+ const capability=deliveryCapability(config.secret);
  const digest=createHash('sha256').update(JSON.stringify([connection.id,envelope])).digest('hex');
- const reserved=await db.rpc('reserve_pull_delivery',{p_connection:connection.id,p_key:digest,p_recipient:envelope.recipient,p_prospect:body.prospectId,p_revision:body.revision,p_consent:body.consentEvidence.trim()});
+ const reserved=await db.rpc('reserve_pull_delivery',{p_connection:connection.id,p_key:digest,p_recipient:envelope.recipient,p_prospect:body.prospectId,p_revision:body.revision,p_consent:body.consentEvidence.trim(),p_capability:capability});
  if(reserved.error)throw failure('Could not reserve this send. Nothing was submitted.',503);
  if(!reserved.data?.claimed)return {delivery:reserved.data,duplicate:true};
  const job=reserved.data.id;let attempted=false;
@@ -79,7 +82,7 @@ export async function channelRequest({request,user,db,env,body,cookies,cookie,tr
   attempted=true;const response=await transport(target,{method:'POST',headers:{Authorization:'Bearer '+tokens.access_token,'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(12000),redirect:'error'});
   if(!response.ok){attempted=response.status>=500||response.status===408;throw failure(response.status===429?'Provider rate limit reached. No automatic retry was made.':'Provider rejected the message. No automatic retry was made.',response.status===429?429:502);}
   const receipt=await response.json(),id=provider==='gmail'?receipt.id:receipt.data?.dm_event_id;if(typeof id!=='string'||!id)throw failure('Provider response lacked a receipt. Check the platform before retrying.',502);
-  const finished=await db.rpc('finish_pull_delivery',{p_job:job,p_status:'submitted',p_receipt:id});if(finished.error)throw failure('Message submitted but receipt could not be recorded. Check the provider before retrying.',503);
+  const finished=await db.rpc('finish_pull_delivery',{p_job:job,p_status:'submitted',p_receipt:id,p_capability:capability});if(finished.error)throw failure('Message submitted but receipt could not be recorded. Check the provider before retrying.',503);
   return {delivery:finished.data};
- }catch(error){await db.rpc('finish_pull_delivery',{p_job:job,p_status:attempted?'uncertain':'failed',p_receipt:''});throw error;}
+ }catch(error){await db.rpc('finish_pull_delivery',{p_job:job,p_status:attempted?'uncertain':'failed',p_receipt:'',p_capability:capability});throw error;}
 }

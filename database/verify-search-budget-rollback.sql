@@ -14,11 +14,11 @@ begin
   -- Take the same lock as production callers so they cannot see fixture counters.
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('pull_search:' || today::text,0));
   delete from pull_private.search_daily_usage where day=today;
-  for i in 1..10 loop
-    if public.claim_pull_search_requests(2) is distinct from true then raise exception 'Owner budget rejected before limit'; end if;
+  for i in 1..100 loop
+    if public.claim_pull_search_requests(1) is distinct from true then raise exception 'Owner budget rejected before limit'; end if;
   end loop;
   if public.claim_pull_search_requests(1) is distinct from false then raise exception 'Owner budget exceeded limit'; end if;
-  update pull_private.search_daily_usage set requests=199 where day=today and owner='project';
+  update pull_private.search_daily_usage set requests=499 where day=today and owner='project';
   perform set_config('request.jwt.claims',json_build_object('sub',gen_random_uuid(),'is_anonymous',false)::text,true);
   if public.claim_pull_search_requests(2) is distinct from false then raise exception 'Project reservation exceeded limit'; end if;
   if public.claim_pull_search_requests(1) is distinct from true then raise exception 'Last project request rejected'; end if;

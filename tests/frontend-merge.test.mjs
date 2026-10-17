@@ -11,6 +11,7 @@ import {renderAutomationView} from '../dist/automations.js';
 import {renderSettingsView,renderSettingsProfile} from '../dist/settings.js';
 import {validateWorkspace} from '../dist/workspace.js';
 import {AccountGuard} from '../dist/cloud.js';
+import * as onboarding from '../dist/onboarding.js';
 
 // Run the real controller with a small DOM adapter. These checks exercise route,
 // import, filter, and account transitions without needing a model or cloud account.
@@ -22,10 +23,10 @@ async function workspace(initialHash='') {
   };
   const document={body:{dataset:{}},querySelector:element,querySelectorAll:()=>[],addEventListener(name,fn){events.set(name,[...(events.get(name)||[]),fn]);}};
   const location={hash:initialHash,protocol:'https:',pathname:'/',search:''};
-  const context={...engine,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
-  vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData}),update:changes=>{if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
+  const context={...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
+  vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,askAI,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData}),update:changes=>{if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
-  return {app:context.testApp,element,location,calls,hash:()=>windowEvents.get('hashchange')(),click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
+  return {app:context.testApp,element,location,calls,respond:fn=>{context.cloudRequest=fn;},hash:()=>windowEvents.get('hashchange')(),click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
 }
 
 test('Merged routes retain AI, continuous Settings, Automations, Connect, and Support',async()=>{
@@ -228,3 +229,23 @@ test('Search progress reports the requested count and its shortfall without plac
 });
 
  test('Direct Buyers links check discovery readiness on initial load',async()=>{const {calls}=await workspace('#prospects');assert.ok(calls.includes('discovery'));});
+
+
+test('Hosted research stays in chat until the owner explicitly adds it to Buyers',async()=>{
+  const w=await workspace('#assistant');w.app.setCloudUser({id:'owner',email:'owner@example.test'});
+  const result={configured:true,people:[{id:'found-person',name:'Fixture Person',title:'CEO',company:'Fixture Software LLC',industry:'Software',location:'Lagos',source_url:'https://example.test/team',source_excerpt:'Private software company in Lagos',supporting_sources:[{url:'https://example.test/about',title:'Company source',excerpt:'Software company'}]}],input:{audience:'CEO',industry:'Software',location:'Lagos',source:'',limit:30},target:{requested:30,returned:1,remaining:29,status:'partial'},notice:'One source-backed match.'};
+  const requests=[];w.respond(async(path,body)=>{requests.push({path,body});return path==='ai'?{reply:'One match, 29 still needed.',research:[result]}:{};});
+  await w.app.askAI('Find 30 software CEOs in Lagos');
+  assert.equal(w.app.get().state.prospects.length,0);assert.equal(w.app.get().assistantState.messages.length,2);
+  assert.equal(requests[0].body.allowResearch,true);assert.equal(requests[0].body.useWorkspace,true);
+  assert.match(w.element('#view-content').innerHTML,/1 of 30 requested/);
+  await w.click({aiResearch:'1:0'});
+  assert.equal(w.app.get().state.prospects.length,1);assert.equal(w.app.get().state.shortlist.length,0);
+  assert.match(w.app.get().state.prospects[0].supporting_sources,/Company source/);
+});
+
+test('Recovery callback opens password selection without treating it as a normal sign-in',async()=>{
+  const w=await workspace('#auth=recovery');
+  assert.match(w.element('#dialog-content').innerHTML,/password-reset-form/);
+  assert.equal(w.app.get().cloud.user,null);
+});

@@ -26,5 +26,13 @@
         }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "api/ai.js": {
+      "maxDuration": 120
+    },
+    "api/discovery.js": {
+      "maxDuration": 60
+    }
+  }
 }

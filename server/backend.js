@@ -3,6 +3,7 @@ import {createClient} from './supabase-rest.js';
 import {createHash,randomBytes} from 'node:crypto';
 import {aiConfiguration,prepareAI,generateReply} from './ai.js';
 import {testAgentConnection} from './agent-test.js';
+import {createIntelligenceTools} from './intelligence.js';
 
 const MAX_BYTES = 3 * 1024 * 1024;
 import {validateWorkspace} from '../dist/workspace.js';
@@ -118,10 +119,11 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
         let input;try{input=discoveryInput(body);}catch(error){return reply(400,{error:error.message});}
         const search=searchConfiguration(env);
         if(!search)return reply(200,await discoverPrivatePages(input));
-        const budget=await client(access).rpc('claim_pull_search_requests',{p_requests:search.maxQueries});
-        if(budget.error)return reply(503,{error:'Search budget controls are unavailable. No search credits were used.'});
-        if(budget.data!==true)return reply(429,{error:'The daily source-search budget is reached. Your imported lists and manual review still work.'});
-        try{return reply(200,await discoverPrivatePages(input,{...search,transport}));}
+        try{const result=await discoverPrivatePages(input,{...search,transport,beforeRequest:async()=>{
+          const budget=await client(access).rpc('claim_pull_search_requests',{p_requests:1});
+          if(budget.error)throw new Error('Search budget controls are unavailable. No further search credits were used.');
+          return budget.data===true;
+        }});if(result.target?.reason==='daily_budget_reached'&&!result.requestsUsed&&!result.people?.length)return reply(429,{...result,error:'The daily source-search budget is reached. Your existing results are kept.'});return reply(200,result);}
         catch(error){return reply(503,{error:error.message});}
       }
       if(resource==='ai'){
@@ -130,7 +132,8 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
         const allowed=await client(access).rpc('claim_pull_ai_request',{});
         if(allowed.error)return reply(503,{error:'AI usage controls are unavailable. Your workspace is kept.'});
         if(allowed.data!==true)return reply(429,{error:'The daily AI usage budget is reached. Your prospect list and manual tools remain available.'});
-        const result=await generateReply({body,userId:user.id,env,transport});const {status,...data}=result;return reply(status,data);
+        const tools=createIntelligenceTools({db:client(access),ownerId:user.id,env,transport,useWorkspace:body.useWorkspace===true,allowResearch:body.allowResearch===true,now});
+        const result=await generateReply({body,userId:user.id,env,transport,tools});const {status,...data}=result;return reply(status,data);
       }
       if(resource==='agents'){
         const endpoint=config.url+'/functions/v1/pull-mcp';

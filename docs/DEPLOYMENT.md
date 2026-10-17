@@ -1,6 +1,6 @@
 # Deploy the combined Pull release
 
-Use the existing private [callmesoye/Pull-GTM repository](https://github.com/callmesoye/Pull-GTM), existing Vercel `pull-gtm` project, and Supabase project `cyakphnpljeesotbjerz`. These instructions are a release procedure, not confirmation that the combined source has been published.
+Use the existing private [callmesoye/Pull-GTM repository](https://github.com/callmesoye/Pull-GTM), existing Vercel `pull-gtm` project, and Supabase project `your-project-ref`. These instructions are a release procedure, not confirmation that the combined source has been published.
 
 ## Application configuration
 
@@ -8,15 +8,17 @@ Vercel serves `dist` and the routes in `api`. The committed `vercel.json` runs s
 
 | Variable | Where / purpose |
 | --- | --- |
-| `SUPABASE_URL` | Vercel/local server: `https://cyakphnpljeesotbjerz.supabase.co` |
+| `SUPABASE_URL` | Vercel/local server: `https://your-project-ref.supabase.co` |
 | `SUPABASE_PUBLISHABLE_KEY` | Vercel/local server: this project’s publishable or legacy anon key; service-role/secret keys are rejected |
 | `PULL_APP_URL` | Google sign-in: exact app origin, e.g. `https://pull-gtm.vercel.app`; no path, query, or fragment |
 | `GOOGLE_AUTH_ENABLED` | Set exactly `true` only after completing provider setup; otherwise Google is unavailable |
 | `PULL_OAUTH_COOKIE_SECRET` | Google sign-in: private random value of at least 32 characters; stable across the deployment |
-| `SERPER_API_KEY` | Optional server-only Serper key for source-page searches; preferred when present |
+| `EXA_API_KEY` | Optional server-only Exa key. Preferred when present unless the provider is explicitly selected; adapter implemented, live connection and relevance unverified |
+| `SERPER_API_KEY` | Optional server-only Serper key for source-page searches; selected after Exa when no explicit provider is set |
 | `BRAVE_SEARCH_API_KEY` | Alternative server-only search key |
-| `PULL_SEARCH_PROVIDER` | Optional `serper` or `brave`; never automatically falls back to a second paid provider after a failure |
-| `PULL_SEARCH_MAX_QUERIES` | Per-search provider request cap from 1 to 3; default 2. This is not a daily or account-wide spend limit |
+| `PULL_SEARCH_PROVIDER` | Optional `exa`, `serper`, or `brave`; never automatically falls back to another provider after a failure |
+| `PULL_SEARCH_MAX_QUERIES` | Per-search provider request cap from 1 to 12; default 8, with a 45-second search time limit. This does not guarantee the requested prospect count |
+| `PULL_SERPER_QUERY_MODE` | `plain` by default for the current free-only Serper setup. Optional `auto` tries source operators once and switches to plain queries if restricted. Source filters remain enforced on returned records |
 | `AI_GATEWAY_API_KEY` | Optional server-only AI Gateway credential; otherwise the code uses Vercel’s injected `VERCEL_OIDC_TOKEN` |
 | `PULL_HOSTED_AI_ENABLED` | Optional emergency off switch: set exactly `false` to disable model calls. Pull AI otherwise uses an available Gateway credential, subject to daily database budgets. |
 | `AI_GATEWAY_MODEL` | Optional model override; current code default is `openai/gpt-5.4-mini` |
@@ -30,15 +32,15 @@ Review which migrations are already applied. Apply missing updates in dependency
 
 Run the supplied `database/verify.sql`, `database/verify-agents.sql`, `database/verify-automations-rollback.sql`, and `database/verify-agent-chat-rollback.sql` as appropriate. The latter three use transaction fixtures and roll back. Record results from the actual project separately from local tests.
 
-For Google sign-in, enable Google in Supabase Auth and configure its client credentials there. The Google provider redirects through `https://cyakphnpljeesotbjerz.supabase.co/auth/v1/callback`. Set the Supabase Site URL to the production origin and allow Pull’s return URL `https://pull-gtm.vercel.app/api/auth`. Each preview origin needs its own matching `PULL_APP_URL` and allowed return URL. For local testing use an allowed localhost origin and `/api/auth`. Email confirmation and production email delivery must also be configured for email registration.
+For Google sign-in, enable Google in Supabase Auth and configure its client credentials there. The Google provider redirects through `https://your-project-ref.supabase.co/auth/v1/callback`. Set the Supabase Site URL to the production origin and allow Pull’s return URL `https://pull-gtm.vercel.app/api/auth`. Each preview origin needs its own matching `PULL_APP_URL` and allowed return URL. For local testing use an allowed localhost origin and `/api/auth`. Email confirmation and production email delivery must also be configured for email registration.
 
-The dedicated Google Cloud project created for login is `booming-quasar-511111-p6` (display name Pull GTM, owner account `exclamationtech@gmail.com`). Billing was not linked. On 9 October 2026, the initial Google Cloud account-access block cleared. Consent setup is waiting for the owner's approval of Google's API Services User Data Policy; no OAuth client has been created yet. Supabase's exact return URL is allowlisted, and Vercel production has the app origin and a private login-state signing value prepared. Google remains disabled. Do not mark Google login ready until client creation, Supabase provider setup, Vercel configuration, and a complete live sign-in/sign-out test have succeeded.
+The dedicated Google Cloud project created for login is `your-google-cloud-project` (display name Pull GTM, owner account `owner-account@example.invalid`). Billing was not linked. On 9 October 2026, the initial Google Cloud account-access block cleared. Consent setup is waiting for the owner's approval of Google's API Services User Data Policy; no OAuth client has been created yet. Supabase's exact return URL is allowlisted, and Vercel production has the app origin and a private login-state signing value prepared. Google remains disabled. Do not mark Google login ready until client creation, Supabase provider setup, Vercel configuration, and a complete live sign-in/sign-out test have succeeded.
 
 ## Search setup and cost
 
-Search adapters support Serper and Brave. Configure one server key and redeploy. Neither account creation nor a search-provider purchase is performed by the code. Keep keys out of browser code, GitHub, and search URLs. Candidate pages stay in memory; no search-result cache is stored. Search filters exclude government/public sources and pages without explicit private-sector wording. This conservative screen is not an ownership audit or evidence of buying intent; verify the entity and source before importing prospects.
+Search adapters support Exa, Serper, and Brave. Configure one server key and redeploy. Neither account creation nor a search-provider purchase is performed by the code. Keep keys out of browser code, GitHub, and search URLs. Candidate pages stay in memory; no search-result cache is stored. Search filters exclude government/public sources and pages without explicit private-sector wording. This conservative screen is not an ownership audit or evidence of buying intent; verify the entity and source before importing prospects.
 
-The database reserves the whole per-search request budget before any paid call: at most 100 provider requests per owner and 500 across the project per UTC day in the current source SQL. Verify the actual deployed counters and limits before release. Unused reservations and failed searches are not refunded, so billing cannot exceed the reserved request allowance. At the default two-request budget this permits up to fifty searches per owner per day. These are initial trial limits, not paid-plan entitlements; change them deliberately before scaling. Requests fail closed if the budget function is missing. Actual charges can vary by provider depth and pricing rules.
+The server claims one database budget unit immediately before each provider request: at most 100 provider requests per owner and 500 across the project per UTC day in the current source SQL. Verify the actual deployed counters and limits before release. Unused adaptive-search capacity is not reserved; failed provider attempts still count. Requests stop when the target, request cap, time limit, or daily budget is reached, and retrieved evidence survives a later failure. These counters limit requests rather than provider billing. The current free-only setup uses plain Serper queries and does not probe known restricted source operators. The code neither changes provider plans nor purchases credits.
 
 Published rates checked on 9 October 2026:
 
@@ -64,3 +66,12 @@ The Edge Function allows the production app origin by default. Optional `PULL_MC
 6. Record the commit, deployment URL, database/function revision, checks performed, and any unavailable feature in [RELEASE.md](RELEASE.md).
 
 A passing server access check establishes key acceptance and the returned tool list. It does not confirm that the user’s external client is connected.
+
+
+### Optional Exa free-quota adapter
+
+The Exa adapter calls only the [Search endpoint](https://exa.ai/docs/reference/search), using natural-language queries, `type: auto`, highlights, and a maximum of 20 results per request. Search has no pagination; Pull tries distinct queries within the existing request/time limits. An explicit source selection can supply a domain/path filter; all returned profiles still pass the original role, industry, personal-location, source, and private-sector checks. No Agent or contact-enrichment endpoint is used.
+
+[Exa pricing](https://exa.ai/pricing), checked 18 October 2026, advertises $10 in monthly free credits and a $10 onboarding bonus without a payment method. This is a finite allowance, not unlimited free usage. Keep the account on its free plan for the current free-only scope. The adapter stops on credit errors, never purchases credits, and never switches to another provider on failure. Provider billing settings and available quota are controlled in the owner's account.
+
+This is an implemented optional connection awaiting an owner-supplied `EXA_API_KEY`. No live Exa call or comparison benchmark has been run; neither superior relevance nor a requested prospect count is established.
