@@ -16,10 +16,10 @@ const workspace=()=>({version:1,prospects:[
 ],shortlist:['p1','p2','p3'],drafts:{},audit:[],mode:'import',identity:'Pull',context:'company',website:'',offer:'Help reviewing prospects',setup:true,duplicates:0,rules:{roles:'Founder',industries:'SaaS',countries:'',min:'',max:'',signals:'',days:'90',evidence:true}});
 const request=(body,{user=A,account=user,origin='https://pull.example',cookie,method}={})=>new Request('https://pull.example/api/automations',{method:method||(body===undefined?'GET':'POST'),headers:{Origin:origin,'Content-Type':'application/json',Cookie:cookie??(user?'__Host-pull-access=valid-'+user+'; __Host-pull-refresh=refresh-'+user:''),...(account?{'X-Pull-Account':account}:{})},body:body===undefined?undefined:JSON.stringify(body)});
 
-function fixture({anonymous=false,outage=false,conflict='',refreshStatus=0}={}) {
+function fixture({anonymous=false,outage=false,conflict='',refreshStatus=0,scheduleError=null}={}) {
   const workflows=new Map([[WA,workflow()],[WB,workflow(WB,B)],[WD,workflow(WD,A,'draft_suggestions','on_import')]]);
   const rows=new Map([[A,{user_id:A,payload:workspace(),revision:1,updated_at:at}],[B,{user_id:B,payload:{...workspace(),identity:'Private B'},revision:1,updated_at:at}]]),runs=[],calls=[];
-  const proposals=new Map();
+  const proposals=new Map(),schedules=new Map();
   const transport=async(input,options)=>{
     const url=new URL(input),body=options.body?JSON.parse(options.body):null;calls.push({url,options,body});
     if(outage)throw new Error('Offline');
@@ -49,12 +49,17 @@ function fixture({anonymous=false,outage=false,conflict='',refreshStatus=0}={}) 
       return Response.json(selected.map(project));
     }
     if(table==='pull_agent_chat_requests')return Response.json([...proposals.values()].filter(r=>r.user_id===owner&&match(r)).map(project));
+    if(table==='pull_workflow_schedules'){
+ if(scheduleError)return Response.json({code:scheduleError},{status:404});
+ if(options.method==='POST'){const row={id:'66666666-6666-4666-8666-666666666666',...body};schedules.set(row.id,row);return Response.json([project(row)]);}
+ const selected=[...schedules.values()].filter(r=>r.user_id===owner&&match(r));if(options.method==='PATCH'){for(const row of selected)schedules.set(row.id,{...row,...body});return Response.json(selected.map(r=>project(schedules.get(r.id))));}return Response.json(selected.map(project));
+ }
     if(table==='pull_workspaces')return Response.json([...rows.values()].filter(r=>r.user_id===owner&&match(r)).map(project));
     if(table==='pull_automation_runs')return Response.json(runs.filter(r=>r.user_id===owner&&match(r)).slice(-20).reverse().map(project));
     throw new Error('Unexpected table');
   };
   const backend=createAutomationsBackend({env,now:()=>new Date(at),clientFactory:(url,key,options)=>createClient(url,key,{...options,global:{...options.global,fetch:transport}})});
-  return {backend,workflows,rows,runs,calls,proposals};
+  return {backend,workflows,rows,runs,calls,proposals,schedules};
 }
 
 test('Audience review reports fit and retains only currently eligible approvals',()=>{
@@ -178,4 +183,18 @@ test('Stale and completed proposals cannot rerun workflows',async()=>{
  const proposal={id,user_id:A,expires_at:'2026-11-01T00:00:00Z',workflow_proposal:{workflowId:WA,revision:4,workflowUpdatedAt:at}};f.proposals.set(id,proposal);
  assert.equal((await f.backend(request({action:'run_proposal',questionId:id}))).status,409);assert.equal(f.runs.length,0);
  proposal.workflow_result={revision:2,updated_at:at,runs:[]};const response=await f.backend(request({action:'run_proposal',questionId:id}));assert.equal((await response.json()).alreadyExecuted,true);assert.equal(f.runs.length,0);
+});
+
+test('Only the owner can schedule an enabled workflow and pause its recurring runs',async()=>{const f=fixture();assert.equal((await f.backend(request({action:'schedule',workflowId:WB,intervalSeconds:3600}))).status,409);assert.equal((await f.backend(request({action:'schedule',workflowId:WA,intervalSeconds:1}))).status,400);const response=await f.backend(request({action:'schedule',workflowId:WA,intervalSeconds:86400}));assert.equal(response.status,201);const id=(await response.json()).schedule.id;assert.equal(f.schedules.get(id).user_id,A);assert.equal((await f.backend(request({action:'update_schedule',id,enabled:false},{user:B}))).status,404);assert.equal((await f.backend(request({action:'update_schedule',id,enabled:false}))).status,200);assert.equal(f.schedules.get(id).enabled,false);assert.equal(f.runs.length,0);});
+
+test('Missing scheduling schema does not disable manual execution',async()=>{
+ const f=fixture({scheduleError:'PGRST205'});
+ const response=await f.backend(request());assert.equal(response.status,200);
+ const data=await response.json();assert.equal(data.schedulingAvailable,false);assert.deepEqual(data.schedules,[]);assert.ok(data.workflows.length);
+ assert.equal((await f.backend(request({action:'run',id:WA,revision:1}))).status,200);
+});
+test('Dashboard uses committed receipts and exposes real schedule exceptions safely',()=>{
+ const html=renderAutomationView({configured:true,signedIn:true,schedulingAvailable:true,workflows:[workflow()],schedules:[{id:WA,workflow_id:WA,enabled:true,interval_seconds:3600,last_status:'failed',next_run_at:at}],runs:[]});
+ assert.match(html,/Your workflow dashboard/);assert.match(html,/Review needed/);assert.match(html,/How execution works/);assert.match(html,/Pause schedule/);
+ const pending=renderAutomationView({configured:true,signedIn:true,workflows:[workflow()]});assert.match(pending,/server setup pending/);assert.match(pending,/Run now remains available/);
 });

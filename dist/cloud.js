@@ -1,4 +1,4 @@
-export async function cloudRequest(path,body,accountId,{timeoutMs=path==='discovery'?60000:25000}={}) {
+export async function cloudRequest(path,body,accountId,{timeoutMs=path==='discovery'||path==='ai'?60000:25000}={}) {
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeoutMs);
   try {
   const response=await fetch('/api/'+path,{

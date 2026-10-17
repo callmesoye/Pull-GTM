@@ -30,7 +30,7 @@ async function workspace(initialHash='') {
 
 test('Merged routes retain AI, continuous Settings, Automations, Connect, and Support',async()=>{
   const {app,element,calls}=await workspace();
-  for(const [route,content] of [['assistant','Prepare prompt'],['settings','settings/general'],['automations','Cloud automations need setup'],['connect','Connect setup'],['support','Support options']]){
+  for(const [route,content] of [['assistant','Ask Pull anything about your business'],['settings','settings/general'],['automations','Cloud automations need setup'],['connect','Connect setup'],['support','Support options']]){
     app.navigate(route);
     assert.equal(app.get().view,route);
     assert.ok(element('#view-content').innerHTML.includes(content),route+' renders its view');

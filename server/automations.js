@@ -1,3 +1,5 @@
+import {applyAutomation} from '../dist/workflow-engine.js';
+export {applyAutomation} from '../dist/workflow-engine.js';
 import {configuration} from './config.js';
 import {createClient} from './supabase-rest.js';
 import {qualify,draftFor} from '../dist/engine.js';
@@ -34,25 +36,6 @@ function validWorkflow(row) {
   return object(row) && UUID.test(row.id) && typeof row.name==='string' && row.name.length<=100 && KINDS.includes(row.kind) && TRIGGERS.includes(row.trigger) && destinationIds.includes(row.destination??'none') && typeof row.enabled==='boolean' && typeof row.archived==='boolean' && typeof row.updated_at==='string' && Number.isFinite(Date.parse(row.updated_at));
 }
 
-export function applyAutomation(workflow,workspace,at=new Date()) {
-  const requestedReviews=new Set(workspace.shortlist||[]),payload=validateWorkspace(workspace,{now:at});
-  if (!KINDS.includes(workflow.kind)) throw new Error('Unknown automation operation.');
-  const evaluated=payload.prospects.map(p=>qualify(p,payload.rules,at));
-  const counts={prospects:evaluated.length,matches:0,needs_evidence:0,excluded:0,drafts_created:0,existing_drafts:0,not_eligible:0,destination:workflow.destination??'none'};
-  for (const p of evaluated) counts[{fit:'matches',review:'needs_evidence',excluded:'excluded'}[p.status]]++;
-  if (workflow.kind==='draft_suggestions') {
-    const reviewed=new Set(payload.shortlist);
-    for (const p of evaluated.filter(p=>requestedReviews.has(p.id))) {
-      if (p.status!=='fit' || p.suppressed || !reviewed.has(p.id)) { counts.not_eligible++; continue; }
-      if (Object.hasOwn(payload.drafts,p.id)) { counts.existing_drafts++; continue; }
-      const channel={linkedin:'personal',x:'x',instagram:'instagram',facebook:'facebook'}[workflow.destination]||'email';
-      payload.drafts[p.id]={body:draftFor(p,payload.offer,payload.identity),subject:'A question for '+(p.company||p.name||'your team'),channel,ready:false};
-      counts.drafts_created++;
-    }
-  }
-  payload.audit.unshift({action:'Automation completed',detail:workflow.name+': '+(workflow.kind==='audience_review'?`${counts.matches} matches, ${counts.needs_evidence} need evidence, ${counts.excluded} excluded. No prospects approved.`:`${counts.drafts_created} template drafts added; ${counts.existing_drafts} existing drafts kept. Nothing sent.`),at:at.toISOString(),mode:payload.mode});
-  return {payload,counts};
-}
 
 async function bodyJSON(request) {
   if (!request.headers.get('content-type')?.startsWith('application/json')) throw Object.assign(new Error('Send JSON data.'),{status:415});
@@ -99,10 +82,22 @@ export function createAutomationsBackend({env=process.env,clientFactory=createCl
       const db=makeClient(access),list=async()=>{
         const workflows=await db.from('pull_automations').select(WORKFLOW_FIELDS).eq('user_id',user.id).eq('archived',false).order('created_at',{ascending:false}).all();
         const runs=await db.from('pull_automation_runs').select(RUN_FIELDS).eq('user_id',user.id).order('created_at',{ascending:false}).limit(20).all();
-        if(workflows.error||runs.error||!workflows.data.every(validWorkflow))throw unavailable();
-        return {configured:true,workflows:workflows.data,runs:runs.data};
+        const schedules=await db.from('pull_workflow_schedules').select('id,workflow_id,interval_seconds,enabled,next_run_at,last_run_at,last_status,last_revision').eq('user_id',user.id).all();
+        const schedulesMissing=['42P01','PGRST205'].includes(schedules.error?.code);
+        if(workflows.error||runs.error||(schedules.error&&!schedulesMissing)||!workflows.data.every(validWorkflow))throw unavailable();
+        return {configured:true,workflows:workflows.data,runs:runs.data,schedules:schedules.data||[],schedulingAvailable:!schedulesMissing};
       };
       if(request.method==='GET')return reply(200,await list());
+      if(['schedule','update_schedule'].includes(body.action)){
+        if(body.action==='schedule'){
+          if(Object.keys(body).some(k=>!['action','workflowId','intervalSeconds'].includes(k))||!UUID.test(body.workflowId||'')||!Number.isInteger(body.intervalSeconds)||body.intervalSeconds<3600||body.intervalSeconds>604800)return reply(400,{error:'Choose a workflow and a repeat interval between one hour and seven days.'});
+          const workflow=await db.from('pull_automations').select(WORKFLOW_FIELDS).eq('user_id',user.id).eq('id',body.workflowId).maybeSingle();if(workflow.error)throw unavailable();if(!workflow.data||!workflow.data.enabled||workflow.data.archived)return reply(409,{error:'Enable this workflow before scheduling it.'});
+          const saved=await db.from('pull_workspaces').select('revision').eq('user_id',user.id).maybeSingle();if(saved.error)throw unavailable();if(!saved.data)return reply(409,{error:'Save a cloud workspace before scheduling it.'});
+          const result=await db.from('pull_workflow_schedules').insert({user_id:user.id,workflow_id:body.workflowId,interval_seconds:body.intervalSeconds,next_run_at:new Date(now().getTime()+body.intervalSeconds*1000).toISOString(),enabled:true}).select('id').single();if(result.error?.code==='23505')return reply(409,{error:'This workflow already has a schedule. Use its pause or resume control.'});if(result.error?.code==='54000')return reply(400,{error:'Pause a schedule before enabling another. Up to ten may be active.'});if(result.error)throw unavailable();return reply(201,{schedule:result.data});
+        }
+        if(Object.keys(body).some(k=>!['action','id','enabled'].includes(k))||!UUID.test(body.id||'')||typeof body.enabled!=='boolean')return reply(400,{error:'Choose a schedule to pause or resume.'});
+        const result=await db.from('pull_workflow_schedules').update({enabled:body.enabled}).eq('user_id',user.id).eq('id',body.id).select('id').maybeSingle();if(result.error)throw unavailable();return result.data?reply(200,{schedule:result.data}):reply(404,{error:'Schedule unavailable.'});
+      }
       let proposalQuestion=null,proposalSnapshot=null;
       if(body.action==='run_proposal'){
         if(Object.keys(body).some(k=>!['action','questionId'].includes(k))||!UUID.test(body.questionId||''))return reply(400,{error:'Choose an agent workflow proposal.'});

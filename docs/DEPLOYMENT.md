@@ -18,7 +18,7 @@ Vercel serves `dist` and the routes in `api`. The committed `vercel.json` runs s
 | `PULL_SEARCH_PROVIDER` | Optional `serper` or `brave`; never automatically falls back to a second paid provider after a failure |
 | `PULL_SEARCH_MAX_QUERIES` | Per-search provider request cap from 1 to 3; default 2. This is not a daily or account-wide spend limit |
 | `AI_GATEWAY_API_KEY` | Optional server-only AI Gateway credential; otherwise the code uses Vercel’s injected `VERCEL_OIDC_TOKEN` |
-| `PULL_HOSTED_AI_ENABLED` | `false` by default. Set exactly `true` only if Pull will fund hosted model calls; the user-agent relay works without it. |
+| `PULL_HOSTED_AI_ENABLED` | Optional emergency off switch: set exactly `false` to disable model calls. Pull AI otherwise uses an available Gateway credential, subject to daily database budgets. |
 | `AI_GATEWAY_MODEL` | Optional model override; current code default is `openai/gpt-5.4-mini` |
 | `PORT` | Local preview only; defaults to `4173` |
 
