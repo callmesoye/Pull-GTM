@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {createBackend} from '../server/backend.js';
-import {prepareAI,generateReply,defaultModel} from '../server/ai.js';
+import {prepareAI,generateReply,defaultModel,aiConfiguration} from '../server/ai.js';
 
 const env={SUPABASE_URL:'https://project.supabase.co',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_fixture',AI_GATEWAY_API_KEY:'test-gateway-credential',PULL_HOSTED_AI_ENABLED:'true'};
 const request=(path,body,account='A')=>new Request('https://pull.example/api/'+path,{method:body===undefined?'GET':'POST',headers:{origin:'https://pull.example','Content-Type':'application/json',cookie:'__Host-pull-access=fixture-session','X-Pull-Account':account},body:body===undefined?undefined:JSON.stringify(body)});
@@ -84,4 +84,11 @@ test('Gateway verification codes are actionable while private error details stay
   const transport=async()=>Response.json({error:{code:'customer_verification_required',message:'private provider details and credential'}},{status:403});
   const result=await generateReply({body:{message:'Hello'},userId:'A',env,transport});
   assert.equal(result.status,503);assert.equal(result.code,'customer_verification_required');assert.match(result.error,/account verification/);assert.ok(!JSON.stringify(result).includes('private provider details'));
+});
+
+test('Vercel runtime uses deployment identity while external servers retain explicit keys',()=>{
+ const credentials={AI_GATEWAY_API_KEY:'key',VERCEL_OIDC_TOKEN:'identity'};
+ assert.equal(aiConfiguration({...credentials,VERCEL:'1'}).credential,'identity');
+ assert.equal(aiConfiguration(credentials).credential,'key');
+ assert.equal(aiConfiguration({...credentials,VERCEL:'1',PULL_HOSTED_AI_ENABLED:'false'}).credential,null);
 });
