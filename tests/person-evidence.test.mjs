@@ -70,6 +70,50 @@ test('live Lagos title formats use complete employer evidence instead of roles o
   assert.equal(generic.company,'');
 });
 
+test('an indexed award mention does not establish the account holder as a current CEO',()=>{
+  const george=page('George A. - New York, New York, United States',"George A. - New York, New York, United States. Most Influential CEO of the Year - Software and IT CV Magazine. Ranked in Software Magazine's Software 500 for 7 ...",'https://www.linkedin.com/in/andersongeorge');
+  assert.equal(parseSourceIdentity(george),null);
+  for(const award of ['CEO of the Year','CEO Awards winner','CEO for the Decade'])assert.equal(personFromSource(page('Ada Okafor | LinkedIn',award+' - Software Magazine'),assessment),null);
+  const actual=personFromSource(page('Ada Okafor - Award-winning CEO at Green Acre Ltd'),assessment);
+  assert.equal(actual.company,'Green Acre Ltd');assert.equal(actual.title,'CEO');
+});
+
+test('role lists and experience role labels never become an employer',()=>{
+  for(const [title,description] of [
+    ['Gregory Taylor - CEO - Board Member','Software executive in New York'],
+    ['Gregory Taylor - CEO, Board Member','Software executive in New York'],
+    ['Gregory Taylor - CEO','Experience: Board Member · Location: New York'],
+    ['Gregory Taylor - CEO at Board Member','Software executive in New York'],
+    ['Gregory Taylor - CEO','CEO. Board Member. Software in New York'],
+    ['Gregory Taylor - CEO - Advisor','Software executive in New York']
+  ]){
+    const found=personFromSource(page(title,description,'https://www.linkedin.com/in/gregory-taylor'),assessment);
+    assert.equal(found.name,'Gregory Taylor');assert.equal(found.company,'');assert.ok(found.missing.includes('Company'));
+  }
+  assert.equal(personFromSource(page('Gregory Taylor - CEO','Employer: Green Acre Ltd · Board Member at Other Company'),assessment).company,'Green Acre Ltd');
+});
+
+test('complete snippet evidence trims headline roles while preserving source-stated employers',()=>{
+  const dan=personFromSource(page('Dan Schulman - CEO of Verizon, Technology and ...','Dan Schulman is an influencer. CEO of Verizon, Technology and Financial Services Business Leader and Board Member. New York, New York, United States.','https://www.linkedin.com/in/dan-schulman'),assessment);
+  assert.equal(dan.company,'Verizon');assert.equal(dan.name,'Dan Schulman');assert.equal(dan.title,'CEO');
+  const legal=personFromSource(page('Ada Okafor - CEO at Green Acre, Inc.','Software in Lagos'),assessment);
+  assert.equal(legal.company,'Green Acre, Inc');
+  const adnan=personFromSource(page('Adnan M. - Co-Founder & CEO at Software Finder','Co-Founder and CEO. Software Finder. Nov 2018 - Present 8 years. New York, United States','https://www.linkedin.com/in/adnan-malik'),assessment);
+  assert.equal(adnan.company,'Software Finder');assert.equal(adnan.name,'Adnan M.');
+});
+
+test('social excerpts about a guest do not supply the account holder role, employer or email',()=>{
+  for(const url of ['https://x.com/adaokafor','https://www.instagram.com/ada.okafor/','https://www.linkedin.com/in/ada-okafor/']){
+    const description='Ada Okafor interviews Ben Smith, CEO at Other Software Ltd. Company: Other Software Ltd · Contact ben@other.example';
+    assert.equal(personFromSource(page('Ada Okafor',description,url),assessment),null);
+    const known=personFromSource(page('Ada Okafor - Founder',description,url),assessment);
+    assert.equal(known.name,'Ada Okafor');assert.equal(known.title,'Founder');assert.equal(known.company,'');assert.equal(known.email,undefined);
+    const own=personFromSource(page('Ada Okafor - Founder at Green Acre Ltd',description,url),assessment);
+    assert.equal(own.company,'Green Acre Ltd');assert.equal(own.email,undefined);assert.equal(own.source,new URL(url).hostname);assert.equal(own.source_excerpt,description);
+  }
+  assert.equal(personFromSource(page('Ada Okafor','Ada Okafor interviews Ben Smith, CEO at Other Software Ltd','https://greenacre.example/team/ada'),assessment),null);
+});
+
 test('source identity can be screened before prospect creation and never guesses a missing employer',()=>{
   const input=page('Ada Okafor - CEO | LinkedIn','Agribusiness in Lagos');
   assert.deepEqual(parseSourceIdentity(input),{name:'Ada Okafor',title:'CEO',company:''});

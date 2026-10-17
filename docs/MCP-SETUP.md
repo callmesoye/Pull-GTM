@@ -5,7 +5,7 @@ Open **Connect your AI** in Pull. Sign in, save your workspace to the cloud, and
 The public server address is:
 
 ```text
-https://cyakphnpljeesotbjerz.supabase.co/functions/v1/pull-mcp
+https://your-project-ref.supabase.co/functions/v1/pull-mcp
 ```
 
 Authentication is the header `Authorization: Bearer YOUR_PULL_KEY`. Keep the actual key out of URLs, shared repositories, chat messages, and support requests.
@@ -41,11 +41,11 @@ The read scope provides `get_workspace_summary` and `list_reviewed_prospects`. I
 
 Choose **Read and answer Pull conversations**, save the workspace, and create a new key. Connect that key to a supported client. In Pull's AI Mode, copy the startup instruction and paste it into a session with your own agent. Keep that agent session running while you ask questions in Pull. The agent must call `get_pull_question` again to collect each pending question and call `answer_pull_question` with its answer. Pull cannot force a third-party agent to run from an MCP connection alone, and a listed key is not proof of an active client. The recent activity indicator means only that a key checked for questions during the last two minutes.
 
-Each question can allow or disallow use of the saved Pull workspace. The agent may use voice and preferences from its own context when relevant, but should not disclose private memories or imply that such preferences are verified market facts. Pull does not fund model replies in this mode. Without a running relay, AI Mode still shows rule-based guidance and prepares prompts for use in your own AI app. It can help plan an automation in chat; executing a saved Pull workflow still requires the owner to approve and run it in Pull.
+Each question can allow or disallow use of the saved Pull workspace. Relay keys can read workspace data, list workflows, or propose drafts/workflows only while they hold an unexpired claimed question that permits workspace access. Any active claimed question that opts out blocks those tools until answered or expired. The check uses persistent claim metadata on every request; answered questions do not keep access open. Standalone workspace-read keys continue to work without a relay question. The agent may use voice and preferences from its own context when relevant, but should not disclose private memories or imply that such preferences are verified market facts. Pull does not fund model replies in this mode. Without a running relay, AI Mode still shows rule-based guidance and prepares prompts for use in your own AI app. It can help plan an automation in chat; executing a saved Pull workflow still requires the owner to approve and run it in Pull.
 
 Leaving the wizard or changing accounts clears the displayed key. If you lose it, revoke the old key and create another. A listed active key does not itself prove a client connection. If the list is empty after connecting, confirm that you saved the right account’s workspace and shortlisted eligible prospects.
 
-For help, [email Abisoye](mailto:gbosheabisoye.ag@gmail.com) or [book a walkthrough](https://calendar.app.google/rhwGJ6n3zaRy5tdr8). Share the error and the step where it happened, without your key or prospect list.
+For help, [email Abisoye](mailto:owner-account@example.invalid) or [book a walkthrough](https://calendar.app.google/rhwGJ6n3zaRy5tdr8). Share the error and the step where it happened, without your key or prospect list.
 
 ## Approve an automation inside chat
 

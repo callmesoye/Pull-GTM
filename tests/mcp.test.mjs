@@ -10,18 +10,19 @@ const prospect=(id='A-good',extra={})=>({id,private_verified:'yes',name:'Example
 const payload=()=>({version:1,identity:'Example Business',context:'company',offer:'Inventory support',website:'https://example.test',prospects:[prospect(),prospect('A-unreviewed'),prospect('A-excluded',{title:'Student'}),prospect('A-stale',{signal_date:'2020-01-01'}),prospect('A-suppressed',{suppressed:true})],shortlist:['A-good','A-excluded','A-stale','A-suppressed'],drafts:{},audit:[],mode:'import',rules:{roles:'Founder',industries:'Retail',countries:'Nigeria',min:'',max:'',signals:'',evidence:true,days:'90'}});
 const rpc=(method,params={},id=1)=>({jsonrpc:'2.0',id,method,params});
 const request=(body,{method='POST',origin,authorization='Bearer '+raw,accept='application/json, text/event-stream',type='application/json',protocol}={})=>new Request('https://project.supabase.co/functions/v1/pull-mcp',{method,headers:{Authorization:authorization,Accept:accept,'Content-Type':type,...(origin===undefined?{}:{Origin:origin}),...(protocol?{'MCP-Protocol-Version':protocol}:{})},body:method==='POST'?(typeof body==='string'?body:JSON.stringify(body)):undefined});
-async function fixture({scopes=['workspace:read','drafts:write'],revoked=false,expired=false,limited=false}={}){
+async function fixture({scopes=['workspace:read','drafts:write'],revoked=false,expired=false,limited=false,questionUseWorkspace=true}={}){
   const tokenHash=await hashAgentToken(raw);
   const token={id:'tokenA',user_id:'ownerA',token_hash:tokenHash,scopes,expires_at:expired?'2026-10-07T12:00:00Z':'2026-11-01T12:00:00Z',revoked_at:revoked?'2026-10-08T10:00:00Z':null};
   const rows=new Map([['ownerA',{user_id:'ownerA',payload:payload(),revision:3,updated_at:now.toISOString()}],['ownerB',{user_id:'ownerB',payload:{...payload(),identity:'Other private business'},revision:5,updated_at:now.toISOString()}]]);
-  const calls=[];
+  const calls=[],claims=[];
   const store={
     authenticate:async hash=>{calls.push(['auth',hash]);return hash===tokenHash?(limited?{limited:true}:structuredClone(token)):null;},
+    loadRelayClaims:async(tokenId,owner,at)=>{calls.push(['claims',tokenId,owner]);return structuredClone(claims.filter(q=>q.status==='claimed'&&new Date(q.expires_at)>new Date(at)));},
     loadWorkspace:async owner=>{calls.push(['load',owner]);return structuredClone(rows.get(owner)||null);},
     listWorkflows:async owner=>{calls.push(['workflows',owner]);return [{id:'22222222-2222-4222-8222-222222222222',name:'Review audience',kind:'audience_review'}];},
     proposeWorkflow:async(hash,args)=>{calls.push(['proposal',hash,args]);return {proposed:true,requiresOwnerApproval:true,sendsMessages:false};},
-    claimQuestion:async hash=>{calls.push(['claim',hash]);return {pending:true,id:'11111111-1111-4111-8111-111111111111',question:'Help me plan.',useWorkspace:true};},
-    answerQuestion:async(hash,id,answer)=>{calls.push(['answer',hash,id,answer]);return id==='11111111-1111-4111-8111-111111111111'?{answered:true,id}:{error:'QUESTION_UNAVAILABLE'};},
+    claimQuestion:async hash=>{calls.push(['claim',hash]);claims.push({id:'11111111-1111-4111-8111-111111111111',agent_token_id:token.id,user_id:token.user_id,status:'claimed',use_workspace:questionUseWorkspace,expires_at:'2026-10-08T12:10:00Z'});return {pending:true,id:claims.at(-1).id,question:'Help me plan.',useWorkspace:questionUseWorkspace};},
+    answerQuestion:async(hash,id,answer)=>{calls.push(['answer',hash,id,answer]);const claim=claims.find(q=>q.id===id&&q.status==='claimed');if(!claim)return {error:'QUESTION_UNAVAILABLE'};claim.status='answered';return {answered:true,id};},
     commitDraft:async(hash,args)=>{
       calls.push(['commit',hash,structuredClone(args)]);
       if(hash!==tokenHash||token.revoked_at||new Date(token.expires_at)<=now||!token.scopes.includes('drafts:write'))return {error:'ACCESS_DENIED'};
@@ -32,7 +33,7 @@ async function fixture({scopes=['workspace:read','drafts:write'],revoked=false,e
       row.revision++;return {revision:row.revision,ready:false,delivery:'not_sent'};
     }
   };
-  return {handler:createMCPHandler({store,now:()=>now}),store,token,rows,calls};
+  return {handler:createMCPHandler({store,now:()=>now}),store,token,rows,calls,claims};
 }
 const invoke=async(f,name,args={})=>{
   const response=await f.handler(request(rpc('tools/call',{name,arguments:args})));return {response,message:await response.json()};
@@ -139,6 +140,45 @@ test('Agent workflow proposal is scoped, validated and never executes a workflow
  const read=await fixture();assert.equal((await invoke(read,'propose_workflow',{})).message.result.isError,true);
  const f=await fixture({scopes:['workspace:read','chat:relay']});
  assert.equal((await invoke(f,'propose_workflow',{questionId:'bad',workflowId:'bad',expectedRevision:3})).message.result.isError,true);
+ await invoke(f,'get_pull_question');
  const result=await invoke(f,'propose_workflow',{questionId:'11111111-1111-4111-8111-111111111111',workflowId:'22222222-2222-4222-8222-222222222222',expectedRevision:3});
  assert.equal(result.message.result.isError,false);assert.equal(f.calls.filter(c=>c[0]==='proposal').length,1);assert.equal(f.calls.filter(c=>c[0]==='commit').length,0);
+});
+
+test('Relay workspace tools enforce the active question choice before private reads or writes',async()=>{
+ for(const questionUseWorkspace of [false,true]){
+  const f=await fixture({scopes:['workspace:read','drafts:write','chat:relay'],questionUseWorkspace});
+  const reads=[['get_workspace_summary',{}],['list_reviewed_prospects',{}],['list_workflows',{}],['propose_draft',proposed()],['propose_workflow',{questionId:'11111111-1111-4111-8111-111111111111',workflowId:'22222222-2222-4222-8222-222222222222',expectedRevision:3}]];
+  for(const [name,args] of reads)assert.equal((await invoke(f,name,args)).message.result.isError,true);
+  await invoke(f,'get_pull_question');
+  for(const [name,args] of reads)assert.equal((await invoke(f,name,args)).message.result.isError,!questionUseWorkspace);
+  if(!questionUseWorkspace)assert.ok(!f.calls.some(c=>['load','workflows','commit','proposal'].includes(c[0])));
+ }
+});
+test('Relay permission is persistent, closes after answer/expiry, and fails closed for mixed or foreign claims',async()=>{
+ const f=await fixture({scopes:['workspace:read','chat:relay']});await invoke(f,'get_pull_question');
+ // A new handler instance must consult the database rather than in-memory claim state.
+ f.handler=createMCPHandler({store:f.store,now:()=>now});
+ assert.equal((await invoke(f,'get_workspace_summary')).message.result.isError,false);
+ const allowed=structuredClone(f.claims[0]);
+ f.claims.push({...allowed,id:'22222222-2222-4222-8222-222222222222',use_workspace:false});
+ assert.equal((await invoke(f,'get_workspace_summary')).message.result.isError,true);
+ await invoke(f,'answer_pull_question',{questionId:'22222222-2222-4222-8222-222222222222',answer:'A reply without Pull data.'});
+ assert.equal((await invoke(f,'get_workspace_summary')).message.result.isError,false);
+ f.claims[0].expires_at='2026-10-08T11:59:00Z';assert.equal((await invoke(f,'get_workspace_summary')).message.result.isError,true);
+ f.claims[0]={...allowed,user_id:'ownerB'};assert.equal((await invoke(f,'get_workspace_summary')).message.result.isError,true);
+ f.claims[0]=allowed;await invoke(f,'answer_pull_question',{questionId:allowed.id,answer:'Done.'});
+ assert.equal((await invoke(f,'get_workspace_summary')).message.result.isError,true);
+});
+test('Standalone read keys do not depend on conversation claims',async()=>{
+ const f=await fixture({scopes:['workspace:read']});f.store.loadRelayClaims=()=>{throw Error('Standalone keys do not need a relay question');};
+ assert.equal((await invoke(f,'get_workspace_summary')).message.result.isError,false);
+ assert.equal((await invoke(f,'list_reviewed_prospects')).message.result.isError,false);
+});
+test('Relay claim metadata is queried only for the authenticated token, owner and unexpired active questions',async()=>{
+ let target;const store=createAgentStore({url:'https://project.supabase.co',key:'sb_secret_fixture',transport:async input=>{target=new URL(input);return Response.json([]);}});
+ await store.loadRelayClaims('tokenA','ownerA',now.toISOString());
+ assert.equal(target.searchParams.get('agent_token_id'),'eq.tokenA');assert.equal(target.searchParams.get('user_id'),'eq.ownerA');
+ assert.equal(target.searchParams.get('status'),'eq.claimed');assert.equal(target.searchParams.get('expires_at'),'gt.'+now.toISOString());
+ assert.ok(!target.searchParams.get('select').includes('question'));
 });

@@ -1,4 +1,7 @@
--- Search credits have separate counters from hosted AI. No prospect data is stored.
+-- Search requests have separate counters from hosted AI. No prospect data is stored.
+-- The server claims one unit immediately before each provider request; unused
+-- adaptive-search capacity is not charged. Reservations remain capped at 3
+-- for compatibility with existing callers. Provider credit pricing is separate.
 create table if not exists pull_private.search_daily_usage (
   day date not null,
   owner text not null,

@@ -13,7 +13,7 @@ const tools=[
   {name:'get_workspace_summary',description:'Read your saved business brief, audience rules, actual workspace counts and revision. Supplied information is unverified. This tool never discovers prospects.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}},
   {name:'list_reviewed_prospects',description:'Read a page of your shortlisted prospects that still pass your current audience rules. Returns supplied evidence and origin labels, excluding emails. No additional prospects are generated.',inputSchema:{type:'object',properties:{offset:{type:'integer',minimum:0},limit:{type:'integer',minimum:1,maximum:50}},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false,openWorldHint:false}},
   {name:'propose_draft',description:'Save an editable draft for one reviewed, currently eligible prospect. The owner must review it; nothing is sent. May replace that prospect’s existing draft. Pass the current workspace revision to prevent overwriting a newer save.',inputSchema:{type:'object',properties:{prospectId:{type:'string',minLength:1,maxLength:200},expectedRevision:{type:'integer',minimum:1},subject:{type:'string',maxLength:200},body:{type:'string',minLength:1,maxLength:5000},channel:{type:'string',enum:['email','personal','company']}},required:['prospectId','expectedRevision','subject','body','channel'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:true,openWorldHint:false}},
-  {name:'get_pull_question',description:'For an explicitly started Pull conversation relay, claim the next question from this owner’s Pull AI Mode. The result includes useWorkspace; when false, do not read Pull workspace tools for that question. Use the user voice and preferences already available in your agent when relevant, but do not reveal private memory or claim unsupplied facts. Return no pending question when empty. Call again to check later; MCP does not make the agent run in the background.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},
+  {name:'get_pull_question',description:'For an explicitly started Pull conversation relay, claim the next question from this owner’s Pull AI Mode. The result includes useWorkspace; when false, workspace tools are blocked while that question is claimed. Claim a question that allows workspace access before reading workspace tools with a relay key. Use the user voice and preferences already available in your agent when relevant, but do not reveal private memory or claim unsupplied facts. Return no pending question when empty. Call again to check later; MCP does not make the agent run in the background.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}},
   {name:'answer_pull_question',description:'Return your actual model-written answer to a question you claimed through get_pull_question. Pull displays it to the owner in AI Mode. Do not claim you used tools or checked sources unless you did.',inputSchema:{type:'object',properties:{questionId:{type:'string',format:'uuid'},answer:{type:'string',minLength:1,maxLength:24000}},required:['questionId','answer'],additionalProperties:false},annotations:{readOnlyHint:false,destructiveHint:false,openWorldHint:false}}
 ];
 
@@ -33,6 +33,13 @@ function eligible(p,now){
 }
 function exposedProspect(p){
   return {...Object.fromEntries(['id','name','title','company','industry','country','signal','signal_date','origin'].map(k=>[k,text(p[k],k==='signal'?2000:500)])),source_url:safeUrl(p.source_url),reviewed:true,evidenceStatus:'Supplied by the owner; not independently verified'};
+}
+// Relay permission is narrower than a standalone workspace key: each active question
+// must opt in. Check persistent claims on every call, including after a cold start.
+async function requireWorkspacePermission(store,token,at){
+  if(!token.scopes.includes('chat:relay'))return;
+  const claims=await store.loadRelayClaims(token.id,token.user_id,at.toISOString());
+  if(!Array.isArray(claims)||!claims.length||claims.some(q=>!object(q)||q.agent_token_id!==token.id||q.user_id!==token.user_id||q.status!=='claimed'||!Number.isFinite(Date.parse(q.expires_at))||new Date(q.expires_at)<=at||q.use_workspace!==true))fail('Claim a current Pull question that allows workspace access before using workspace tools. Answer questions that disallow workspace access first.');
 }
 async function boundedText(request){
   const declared=Number(request.headers.get('content-length'));
@@ -90,9 +97,10 @@ export function createMCPHandler({store,now=()=>new Date(),allowedOrigins=['http
       if(['get_pull_question','answer_pull_question','propose_workflow','list_workflows'].includes(name)){
         if(!token.scopes.includes('chat:relay'))fail('This key does not have conversation relay permission.');
         let result;
-        if(name==='list_workflows')result={workflows:await store.listWorkflows(token.user_id)};
+        if(name==='list_workflows'){await requireWorkspacePermission(store,token,now());result={workflows:await store.listWorkflows(token.user_id)};}
         else if(name==='propose_workflow'){
           if(![args.questionId,args.workflowId].every(id=>typeof id==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))||!Number.isSafeInteger(args.expectedRevision)||args.expectedRevision<1)fail('Use a claimed question, workflow ID, and current saved revision.');
+          await requireWorkspacePermission(store,token,now());
           result=await store.proposeWorkflow(tokenHash,args);
         }
         else if(name==='get_pull_question')result=await store.claimQuestion(tokenHash);
@@ -104,6 +112,7 @@ export function createMCPHandler({store,now=()=>new Date(),allowedOrigins=['http
         return reply(200,{jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(result)}],isError:false}});
       }
       if(name==='propose_draft'&&!token.scopes.includes('drafts:write'))fail('This token only permits reading. The owner can issue draft proposal access from Connections.');
+      await requireWorkspacePermission(store,token,now());
       const row=await store.loadWorkspace(token.user_id),p=workspacePayload(row,token.user_id);let result;
       if(name==='get_workspace_summary'){
         result=p?{saved:true,revision:row.revision,updatedAt:row.updated_at,identity:text(p.identity,500),offer:text(p.offer,5000),context:p.context==='company'?'company':'personal',website:safeUrl(p.website),audience:audience(p.rules),dataMode:p.mode,counts:{importedProspects:p.prospects.length,shortlistedProspects:p.shortlist.length,eligibleReviewedProspects:eligible(p,now()).length,preparedDrafts:Object.values(p.drafts).filter(d=>d?.ready===true).length},delivery:'No sending provider is connected; draft counts are not sent counts.'}:{saved:false,revision:0,counts:{importedProspects:0,shortlistedProspects:0,eligibleReviewedProspects:0,preparedDrafts:0}};

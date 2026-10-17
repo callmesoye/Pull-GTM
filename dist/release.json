@@ -1,7 +1,14 @@
 {
   "name": "Pull GTM",
-  "release": "2026-10-10-supported-live-prospect-search",
+  "release": "2026-10-18-auth-intelligence-free-search",
   "backend": "Supabase cyakphnpljeesotbjerz",
   "mcp": "pull-mcp v5",
-  "searchAdapters": ["serper", "brave"]
+  "searchAdapters": [
+    "exa",
+    "serper",
+    "brave"
+  ],
+  "searchAdapterStatus": {
+    "exa": "implemented-unverified"
+  }
 }

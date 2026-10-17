@@ -7,6 +7,8 @@ const platformName=/^(linkedin|facebook|instagram|x|twitter|profile|team|about|p
 const genericName=/\b(company|companies|business|businesses|founders?|ceos?|chief|executive|directors?|owners?|school|teachers?|estate|realty|group|solutions|technologies|limited|ltd|llc|inc|top|best|private|people|directory|profiles?|jobs?|careers?|search|results|leadership|university|meet|interview|story|news|about|blog|contact|latest|our|board|team)\b/i;
 const clean=value=>String(value??'').replace(/\s+/g,' ').trim();
 const pastRolePrefix=/\b(?:former|previous|previously|past|retired)\b|\bex[- ]$/i;
+const roleOnlyEmployer=/^(?:(?:(?:non[- ]executive|executive|advisory)\s+)?board\s+(?:member|director)|board of directors|(?:business|technology|financial services)\s+leader|investor|advis[oe]r|mentor|speaker|entrepreneur)(?:\b|$)/i;
+const recognitionSuffix=/^\s+(?:(?:of|for)\s+the\s+(?:year|decade|month)|awards?\b|award[- ]winner\b|honou?ree\b)/i;
 
 function sourceUrl(page){
   try{
@@ -43,15 +45,20 @@ function companyName(value,{explicit=false}={}){
   let company=clean(value);
   company=company.split(/[|·]/u)[0].replace(/\s+[–—-]\s+(?:LinkedIn|Facebook|Instagram|Twitter|X)$/iu,'');
   company=company.replace(/,\s+(?:a|an|the|I|we|they|he|she|where|which|who|based|located)\b.*$/iu,'').replace(/\.\s+[\p{Lu}].*$/u,'');
+  // A comma often starts another headline role, rather than extending the employer.
+  const comma=company.indexOf(',');
+  if(comma>=0){const tail=company.slice(comma+1).trim();if(rolePattern.test(tail)||roleOnlyEmployer.test(tail)||/\b(?:business leader|board member|investor|advis[oe]r)\b/i.test(tail))company=company.slice(0,comma);}
   if(/…|\.{3}/u.test(company))return '';
   company=company.replace(/[.,;:]+$/u,'').replace(/\s+(?:in|based in|located in|from)\s+.*$/iu,'').trim();
-  if(!company||company.length>100||/^(?:self-employed|freelancer?|helping|serving|building|connecting|find|buy|sell|learn)\b/i.test(company)||(!explicit&&(platformName.test(company)||rolePattern.test(company)))||/^(?:a|an|the|my|our|your|their|his|her)\s+(?:private\s+)?(?:company|business|school|agency|profile|team)\b/i.test(company))return '';
+  const role=company.match(rolePattern),onlyRole=role&&role.index===0&&role[0].length===company.length;
+  if(!company||company.length>100||roleOnlyEmployer.test(company)||(onlyRole&&!(explicit&&/^owner$/i.test(company)))||/^(?:self-employed|freelancer?|helping|serving|building|connecting|find|buy|sell|learn|the\s+(?:year|decade|month))\b|^(?:Location|Education)\s*:/i.test(company)||(!explicit&&(platformName.test(company)||rolePattern.test(company)))||/^(?:a|an|the|my|our|your|their|his|her)\s+(?:private\s+)?(?:company|business|school|agency|profile|team)\b/i.test(company))return '';
   return company;
 }
 
 function roleAndCompany(text){
   const roleMatch=String(text).match(rolePattern);
   if(!roleMatch)return null;
+  if(recognitionSuffix.test(String(text).slice(roleMatch.index+roleMatch[0].length)))return null;
   if(pastRolePrefix.test(String(text).slice(0,roleMatch.index)))return null;
   const after=String(text).slice(roleMatch.index).split(/\b(?:reporting to|reports to|working with|works with|supporting the|supports the)\b/iu)[0].trim();
   const relation=/^head of\b/i.test(after)?/(?:\b(?:at|with|for)|@)\s+([^|·–—;\n]+)/iu:/(?:\b(?:at|of|with|for)|@)\s+([^|·–—;\n]+)/iu;
@@ -71,6 +78,22 @@ function roleAndCompany(text){
   return {title:role.length<=100?role:roleMatch[0],company};
 }
 
+function foreignRoleSubject(description){
+  const role=description.match(rolePattern);if(!role)return '';
+  const before=description.slice(0,role.index);
+  // A profile excerpt can be a repost or interview about a different person.
+  // Do not transfer a guest's title or employer to the named account holder.
+  return /\b(?:interviews?|featuring|welcomes?|congratulates?|meet|reporting to|reports to|working with|works with|supporting the|supports the)\b[^.;·|]*$/i.test(before);
+}
+
+function attributedDescription(description,name,{profile=false}={}){
+  const role=description.match(rolePattern);if(!role||foreignRoleSubject(description))return '';
+  const before=description.slice(0,role.index);
+  if(profile)return description;
+  const escaped=name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  return new RegExp('(?:^|[^\\p{L}])'+escaped+'(?=$|[^\\p{L}])','iu').test(before)?description:'';
+}
+
 export function parseSourceIdentity(page){
   const url=sourceUrl(page);if(!url)return null;
   const profile=Boolean(profileField(url)),description=clean(page.description);
@@ -83,28 +106,29 @@ export function parseSourceIdentity(page){
     if(statement&&profile){name=personName(statement[1],{profile:true});body=[statement[2],...body];}
   }
   if(!name)return null;
+  const ownDescription=attributedDescription(description,name,{profile});
   let evidence=roleAndCompany(body.join(' - '));
   if(!evidence&&body.some(segment=>{const role=segment.match(rolePattern);return role&&pastRolePrefix.test(segment.slice(0,role.index));}))return null;
   // Profile excerpts describe their named account. Other source excerpts must
   // explicitly repeat the name before a professional role can be attributed.
-  if(!evidence&&(profile||description.toLocaleLowerCase().includes(name.toLocaleLowerCase())))evidence=roleAndCompany(description);
+  if(!evidence&&ownDescription)evidence=roleAndCompany(ownDescription);
   if(!evidence)return null;
   let company=evidence.company;
   if(!company){
     const roleIndex=body.findIndex(segment=>rolePattern.test(segment));
     if(roleIndex>=0)company=companyName(body[roleIndex+1]||'');
   }
-  if(!company&&(profile||description.toLocaleLowerCase().includes(name.toLocaleLowerCase()))){
-    const snippetEvidence=roleAndCompany(description);
+  if(!company&&ownDescription){
+    const snippetEvidence=roleAndCompany(ownDescription);
     const roleKeys=value=>[...clean(value).toLowerCase().replace(/chief executive(?: officer)?/g,'ceo').replace(/chief technology(?: officer)?/g,'cto').replace(/chief financial(?: officer)?/g,'cfo').replace(/chief operating(?: officer)?/g,'coo').replace(/chief marketing(?: officer)?/g,'cmo').replace(/chief revenue(?: officer)?/g,'cro').matchAll(new RegExp(rolePattern.source,'giu'))].map(match=>match[0]);
     if(snippetEvidence?.company&&roleKeys(evidence.title).some(role=>roleKeys(snippetEvidence.title).includes(role)))company=snippetEvidence.company;
   }
-  if(!company&&profile){
+  if(!company&&profile&&!foreignRoleSubject(description)){
     const experience=description.match(/\b(?:Experience|Company|Employer)\s*:\s*([^·|;]+?)(?=\s+(?:Location|Education|Connections|Followers)\s*:|[·|;]|$)/iu);
     company=companyName(experience?.[1]||'',{explicit:Boolean(experience)});
   }
-  if(!company&&profile){
-    const parts=description.split(separators);
+  if(!company&&profile&&ownDescription){
+    const parts=ownDescription.split(separators);
     const roleIndex=parts.findIndex(part=>{const role=roleAndCompany(part);return role&&clean(part).toLowerCase()===role.title.toLowerCase();});
     if(roleIndex>=0)company=companyName(parts[roleIndex+1]||'');
   }
@@ -116,7 +140,8 @@ export function personFromSource(page,assessment={}) {
   const identity=parseSourceIdentity(page);if(!identity)return null;
   const url=sourceUrl(page),field=profileField(url);
   const missing=[...new Set([...(assessment.missing||[]),...(!identity.company?['Company']:[])])];
-  const email=clean(page.title+' '+page.description).match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/)?.[0]||'';
+  const contactEvidence=clean(page.title+' '+(foreignRoleSubject(clean(page.description))?'':page.description));
+  const email=contactEvidence.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/)?.[0]||'';
   const id='source-'+createHash('sha256').update(url.href+'|'+identity.name.toLowerCase()).digest('hex').slice(0,20);
   return {id,...identity,...(field?{[field]:url.href}:{}),...(email?{email}:{}),source_url:url.href,source_title:clean(page.title),source_excerpt:clean(page.description),source:url.hostname,relevance:assessment.score||0,reason:assessment.reason||'',missing,identity_status:'source-asserted',contact_status:field?'public-profile':email?'public-email':'unknown',private_sector_status:'source-asserted'};
 }

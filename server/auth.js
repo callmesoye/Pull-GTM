@@ -1,5 +1,7 @@
 import {createHash, createHmac, randomBytes, timingSafeEqual} from 'node:crypto';
 import {configuration} from './config.js';
+import {createEmailAuth,readAccountJSON} from './email-auth.js';
+export {createEmailAuth,emailConfiguration} from './email-auth.js';
 
 const VERIFIER_SECONDS = 600;
 const BODY_BYTES = 2048;
@@ -97,5 +99,19 @@ export function createGoogleAuth({env=process.env, transport=fetch, now=()=>Date
       cookie('refresh',session.refresh_token,60*60*24*30);
       return redirect('success');
     } catch { return redirect('error'); }
+  };
+}
+
+export function createAuth(options={}) {
+  const google=createGoogleAuth(options),email=createEmailAuth(options);
+  return async request=>{
+    const url=new URL(request.url);
+    if(request.method==='GET') return url.searchParams.has('flow')?email(request):google(request);
+    if(request.method!=='POST') return email(request);
+    const parsed=await readAccountJSON(request);
+    if(parsed.status) return Response.json({error:parsed.status===413?'Account request is too large.':'Send a valid account request.'},{status:parsed.status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer'}});
+    const headers=new Headers(request.headers);headers.delete('content-length');
+    const forwarded=new Request(request.url,{method:'POST',headers,body:JSON.stringify(parsed.body)});
+    return parsed.body.action==='start'?google(forwarded):email(forwarded);
   };
 }

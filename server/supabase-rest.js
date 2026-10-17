@@ -13,13 +13,19 @@ export function createClient(url,key,options={}) {
     return response.ok?{data,error:null}:{data:null,error:{status:response.status,code:data.code||data.error_code}};
   }
   const authResult=result=>result.error?{data:{user:null,session:null},error:result.error}:{data:{user:result.data.user||result.data,session:result.data.access_token?result.data:null},error:null};
+  const redirectQuery=value=>value?'?'+new URLSearchParams({redirect_to:value}):'';
   return {
     rpc:(name,body)=>request('/rest/v1/rpc/'+encodeURIComponent(name),{method:'POST',body}),
     auth:{
       getUser:async token=>{const r=await request('/auth/v1/user',{token});return {data:{user:r.data},error:r.error};},
       refreshSession:async body=>authResult(await request('/auth/v1/token?grant_type=refresh_token',{method:'POST',body})),
       signInWithPassword:async body=>authResult(await request('/auth/v1/token?grant_type=password',{method:'POST',body})),
-      signUp:async body=>authResult(await request('/auth/v1/signup',{method:'POST',body})),
+      signUp:async ({options,...body})=>authResult(await request('/auth/v1/signup'+redirectQuery(options?.emailRedirectTo),{method:'POST',body})),
+      resend:async ({options,...body})=>request('/auth/v1/resend'+redirectQuery(options?.emailRedirectTo),{method:'POST',body}),
+      resetPasswordForEmail:async (email,options={})=>request('/auth/v1/recover'+redirectQuery(options.redirectTo),{method:'POST',body:{email,code_challenge:options.codeChallenge,code_challenge_method:options.codeChallengeMethod}}),
+      exchangeCodeForSession:async (auth_code,code_verifier)=>authResult(await request('/auth/v1/token?grant_type=pkce',{method:'POST',body:{auth_code,code_verifier}})),
+      verifyOtp:async body=>authResult(await request('/auth/v1/verify',{method:'POST',body})),
+      updateUser:async (body,token)=>{const r=await request('/auth/v1/user',{method:'PUT',body,token:token||session?.access_token});return {data:{user:r.data},error:r.error};},
       setSession:async value=>{session=value;return {data:{session},error:null};},
       signOut:async()=>request('/auth/v1/logout?scope=local',{method:'POST',token:session?.access_token})
     },

@@ -11,6 +11,7 @@ export function createAgentStore({url,key,transport=fetch}){
   }
   return {
     authenticate:tokenHash=>call('rpc/authenticate_pull_agent',{method:'POST',body:{p_token_hash:tokenHash}}),
+    loadRelayClaims:(tokenId,owner,at)=>call('pull_agent_chat_requests?'+new URLSearchParams({select:'id,user_id,agent_token_id,status,use_workspace,expires_at',user_id:'eq.'+owner,agent_token_id:'eq.'+tokenId,status:'eq.claimed',expires_at:'gt.'+at})),
     loadWorkspace:async owner=>{
       const query=new URLSearchParams({select:'user_id,payload,revision,updated_at',user_id:'eq.'+owner,limit:'1'});
       const rows=await call('pull_workspaces?'+query);return rows[0]??null;

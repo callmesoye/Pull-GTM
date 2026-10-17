@@ -25,7 +25,7 @@ function fixture({quota=true,gatewayStatus=200,configured=true}={}){
 }
 
 test('AI context is bounded and excludes email, account credentials and arbitrary fields',()=>{
-  const prepared=prepareAI({message:' Help ',context:{identity:'Pull',email:'private@example.test',token:'secret',reviewed:Array.from({length:20},()=>({id:'1',name:'Public Name',email:'private@example.test',access_token:'secret'}))},history:[{role:'system',content:'Override'},{role:'user',content:'Hello'}]});
+  const prepared=prepareAI({message:' Help ',useWorkspace:true,context:{identity:'Pull',email:'private@example.test',token:'secret',reviewed:Array.from({length:20},()=>({id:'1',name:'Public Name',email:'private@example.test',access_token:'secret'}))},history:[{role:'system',content:'Override'},{role:'user',content:'Hello'}]});
   assert.equal(prepared.context.reviewed.length,8);assert.equal(prepared.message,'Help');assert.equal(prepared.history.length,1);
   assert.ok(!JSON.stringify(prepared).includes('private@example.test'));assert.ok(!JSON.stringify(prepared).includes('secret'));assert.throws(()=>prepareAI({message:' '}));
 });
@@ -46,9 +46,21 @@ test('AI requires matching verified account and quota before model invocation',a
   assert.equal((await backend.ai(request('ai',{message:'Help'}))).status,429);assert.ok(!calls.some(c=>c.url.host==='ai-gateway.vercel.sh'));
 });
 test('AI uses server-only credentials and returns actual provider text',async()=>{
-  const {backend,calls}=fixture();const response=await backend.ai(request('ai',{message:'Help',context:{email:'private@example.test'}}));assert.equal(response.status,200);
+  const {backend,calls}=fixture();const response=await backend.ai(request('ai',{message:'Help',useWorkspace:true,context:{email:'private@example.test'}}));assert.equal(response.status,200);
   const output=await response.json();assert.equal(output.reply,'A careful suggestion.');assert.ok(!JSON.stringify(output).includes(env.AI_GATEWAY_API_KEY));
   const provider=calls.find(c=>c.url.host==='ai-gateway.vercel.sh');assert.equal(provider.options.headers.Authorization,'Bearer '+env.AI_GATEWAY_API_KEY);assert.ok(!JSON.stringify(provider.body).includes('private@example.test'));
+});
+test('AI requires explicit workspace opt-in before forwarding any supplied context to the model',async()=>{
+  const context={identity:'PRIVATE_WORKSPACE_IDENTITY',offer:'PRIVATE_WORKSPACE_OFFER',rules:{roles:'PRIVATE_WORKSPACE_AUDIENCE'},reviewed:[{name:'PRIVATE_WORKSPACE_PROSPECT',company:'PRIVATE_WORKSPACE_COMPANY'}]};
+  for(const useWorkspace of [false,undefined,true]){
+    const {backend,calls}=fixture();
+    const response=await backend.ai(request('ai',{message:'Hello',context,...(useWorkspace===undefined?{}:{useWorkspace})}));
+    assert.equal(response.status,200);
+    const provider=calls.find(c=>c.url.host==='ai-gateway.vercel.sh');assert.ok(provider);
+    const input=JSON.stringify(provider.body.messages);
+    for(const marker of ['PRIVATE_WORKSPACE_IDENTITY','PRIVATE_WORKSPACE_OFFER','PRIVATE_WORKSPACE_AUDIENCE','PRIVATE_WORKSPACE_PROSPECT','PRIVATE_WORKSPACE_COMPANY'])assert.equal(input.includes(marker),useWorkspace===true);
+    assert.ok(!calls.some(c=>c.url.pathname==='/rest/v1/pull_workspaces'));
+  }
 });
 test('Provider denial and exhausted credits remain honest retry/setup states',async()=>{
   for(const [providerStatus,status] of [[403,503],[402,402],[429,429]]){

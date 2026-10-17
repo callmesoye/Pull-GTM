@@ -6,11 +6,35 @@ Implemented adapters: Gmail email and X direct messages. Neither is a verified l
 
 Use the existing HTTPS `PULL_APP_URL`. Store credentials only in Vercel environment settings:
 
-- Gmail: `PULL_GMAIL_CLIENT_ID`, `PULL_GMAIL_CLIENT_SECRET`. Enable Gmail API and register the exact callback `https://pull-gtm.vercel.app/api/channels?callback=gmail`. Requested scopes: OpenID identity/email and `https://www.googleapis.com/auth/gmail.send`. This is mailbox authorization, separate from Supabase Google sign-in. Google's consent configuration, testing-user restrictions and any required verification must be completed by the app owner.
-- X: `PULL_X_CLIENT_ID`, `PULL_X_CLIENT_SECRET`. Use a confidential OAuth 2.0 web application, exact callback `https://pull-gtm.vercel.app/api/channels?callback=x`, and `users.read tweet.read dm.write offline.access`. Provider API access/entitlements must permit recipient lookup and direct messaging.
+- Gmail: `PULL_GMAIL_CLIENT_ID`, `PULL_GMAIL_CLIENT_SECRET`. Enable Gmail API and register the exact callback `https://your-app.example/api/channels?callback=gmail`. Requested scopes: OpenID identity/email and `https://www.googleapis.com/auth/gmail.send`. This is mailbox authorization, separate from Supabase Google sign-in. Google's consent configuration, testing-user restrictions and any required verification must be completed by the app owner.
+- X: `PULL_X_CLIENT_ID`, `PULL_X_CLIENT_SECRET`. Use a confidential OAuth 2.0 web application, exact callback `https://your-app.example/api/channels?callback=x`, and `users.read tweet.read dm.write offline.access`. Provider API access/entitlements must permit recipient lookup and direct messaging.
 - Encryption: optional dedicated `PULL_CHANNEL_SECRET` of at least 32 random characters; otherwise the existing private `PULL_OAUTH_COOKIE_SECRET` is used with a distinct key-derivation context. Keep the key stable. A key rotation requires reconnection unless an explicit old-key migration is added. Keep keys out of chat and source control.
 
-Apply `database/channels.sql`, then execute `database/verify-channels-rollback.sql`. It checks reservations, duplicate and overlap protection, revoked accounts, cross-owner isolation, uncertain outcomes and controlled explicit retries; fixtures roll back.
+Apply `database/channels.sql` for a new installation, or `database/receipt-integrity.sql` after an existing channel installation. Both are idempotent. Provision the receipt capability digest below, then execute `database/verify-channels-rollback.sql` and `database/verify-receipt-integrity-rollback.sql`. It checks reservations, duplicate and overlap protection, revoked accounts, cross-owner isolation, uncertain outcomes and controlled explicit retries; fixtures roll back.
+
+## Server receipt capability
+
+Reservation and receipt completion require owner authentication plus a narrow capability derived from the existing private channel secret. Browser sessions alone cannot create a reservation or certify a provider submission. There is no service-role credential added to the channel API. Missing or mismatched provisioning fails at reservation, before a provider request.
+
+Use a trusted server environment containing `PULL_CHANNEL_SECRET` (or its existing fallback `PULL_OAUTH_COOKIE_SECRET`) to compute **only the digest** with this Node expression:
+
+```js
+const {createHash}=await import('node:crypto');
+const secret=process.env.PULL_CHANNEL_SECRET||process.env.PULL_OAUTH_COOKIE_SECRET;
+if(typeof secret!=='string'||secret.length<32)throw new Error('Channel secret unavailable');
+const capability=createHash('sha256').update('pull-delivery-receipt-v1\0'+secret).digest('hex');
+console.log(createHash('sha256').update(capability).digest('hex'));
+```
+
+Provision that digest through the database administrator connection, replacing the placeholder with the 64-character digest. Do not paste the underlying secret or capability into SQL, browser code, logs or chat:
+
+```sql
+insert into pull_private.delivery_receipt_capability(singleton,capability_hash)
+values(true,'REPLACE_WITH_SHA256_DIGEST')
+on conflict(singleton) do update set capability_hash=excluded.capability_hash;
+```
+
+Apply the migration and provision the matching digest before publishing the matching API code. The old RPC signatures are removed. Existing delivery jobs and connections are retained; the old API fails closed until it is updated. Channel-secret rotation also requires updating this digest. Rollback checks substitute a disposable digest within a transaction and restore the configured value automatically.
 
 ## User flow
 

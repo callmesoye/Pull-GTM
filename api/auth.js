@@ -1,3 +1,3 @@
-import {createGoogleAuth} from '../server/auth.js';
+import {createAuth} from '../server/auth.js';
 
-export default {fetch:request=>createGoogleAuth()(request)};
+export default {fetch:request=>createAuth()(request)};
