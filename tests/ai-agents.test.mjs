@@ -79,3 +79,9 @@ test('Agent grants reject unsupported scopes and stale accounts before issuing a
 test('Revoking agent access updates only the verified owner token',async()=>{
   const {backend,calls}=fixture();const id='11111111-1111-4111-8111-111111111111';const response=await backend.agents(request('agents',{action:'revoke',id,user_id:'B'}));assert.equal(response.status,200);const update=calls.find(c=>c.options.method==='PATCH');assert.equal(update.url.searchParams.get('user_id'),'eq.A');assert.equal(update.url.searchParams.get('id'),'eq.'+id);assert.equal(update.body.revoked_at,'2026-10-08T12:00:00.000Z');
 });
+
+test('Gateway verification codes are actionable while private error details stay hidden',async()=>{
+  const transport=async()=>Response.json({error:{code:'customer_verification_required',message:'private provider details and credential'}},{status:403});
+  const result=await generateReply({body:{message:'Hello'},userId:'A',env,transport});
+  assert.equal(result.status,503);assert.equal(result.code,'customer_verification_required');assert.match(result.error,/account verification/);assert.ok(!JSON.stringify(result).includes('private provider details'));
+});

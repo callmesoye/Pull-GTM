@@ -13,7 +13,11 @@ export function prepareAI(body){
   if(body.useWorkspace!==undefined&&typeof body.useWorkspace!=='boolean'||body.allowResearch!==undefined&&typeof body.allowResearch!=='boolean')throw new Error('Choose your workspace and research permissions.');
   return {context,message:body.message.trim(),history};
 }
-function providerError(status){
+function providerError(status,data){
+  const codes=['customer_verification_required','invalid_api_key','authentication_error','permission_denied','forbidden','free_tier_model_not_allowed','model_not_available_for_free_tier','insufficient_funds','quota_for_entity_exceeded'];
+  const code=[data?.error?.code,data?.error?.type,data?.code].find(value=>codes.includes(value));
+  if(code==='customer_verification_required')return {status:503,error:'Vercel requires account verification before server AI requests can run. Complete verification in AI Gateway; no paid top-up is required by Pull.',code};
+  if(code&&[401,403].includes(status))return {status:503,error:'AI Gateway rejected server access ('+code+'). Check this key and its free-tier access in Vercel.',code};
   return status===402?{status:402,error:'AI Gateway credits or the configured budget are exhausted. Your workspace is kept.'}:[401,403].includes(status)?{status:503,error:'AI Gateway authentication or account verification needs attention in Vercel.'}:status===429?{status:429,error:'The model is busy. Wait briefly and retry.'}:{status:503,error:'The model is temporarily unavailable. Your workspace is kept.'};
 }
 export async function generateReply({body,userId,env,transport,tools={}}){
@@ -30,7 +34,7 @@ export async function generateReply({body,userId,env,transport,tools={}}){
       response=await transport('https://ai-gateway.vercel.sh/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+credential,'Content-Type':'application/json'},signal:AbortSignal.timeout(30000),body:JSON.stringify({model,stream:false,max_completion_tokens:1800,safety_identifier:userId,messages,...(definitions.length?{tools:definitions,tool_choice:step===0?'auto':'none',parallel_tool_calls:false}:{})})});
       data=await response.json().catch(()=>({}));
     }catch{return preserved()||{status:503,error:'The model connection could not finish. Your workspace is kept.'};}
-    if(!response.ok)return preserved()||providerError(response.status);
+    if(!response.ok)return preserved()||providerError(response.status,data);
     for(const key of Object.keys(usage))if(Number.isFinite(data.usage?.[key]))usage[key]+=data.usage[key];
     const message=data.choices?.[0]?.message,calls=Array.isArray(message?.tool_calls)?message.tool_calls:[];
     if(!calls.length){const reply=message?.content;if(typeof reply!=='string'||!reply.trim())return preserved()||{status:502,error:'The model returned no usable reply. Try again.'};return {status:200,reply:reply.slice(0,24000),model,usage,...(research.length?{research}:{}),...(actions.length?{actions}:{})};}
