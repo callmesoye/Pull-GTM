@@ -92,3 +92,10 @@ test('Vercel runtime uses deployment identity while external servers retain expl
  assert.equal(aiConfiguration(credentials).credential,'key');
  assert.equal(aiConfiguration({...credentials,VERCEL:'1',PULL_HOSTED_AI_ENABLED:'false'}).credential,null);
 });
+
+test('Authenticated direct probe cannot send supplied workspace, history, questions or tools',async()=>{
+ const {backend,calls}=fixture();
+ const response=await backend.ai(request('ai',{action:'probe',message:'SECRET_QUESTION',useWorkspace:true,allowResearch:true,context:{identity:'SECRET_CONTEXT'},history:[{role:'user',content:'SECRET_HISTORY'}]}));
+ assert.equal(response.status,200);const provider=calls.find(c=>c.url.host==='ai-gateway.vercel.sh');
+ assert.equal(provider.body.model,'deepseek/deepseek-v4.1-flash-1017');assert.deepEqual(provider.body.messages,[{role:'user',content:'Reply only: Hello.'}]);assert.equal(provider.body.tools,undefined);assert.deepEqual(provider.body.providerOptions.gateway.only,['deepinfra']);assert.ok(!JSON.stringify(provider.body).includes('SECRET_'));assert.ok(calls.some(c=>c.url.pathname.includes('claim_pull_ai_request')));
+});

@@ -15,6 +15,10 @@ export function prepareAI(body){
   return {context,message:body.message.trim(),history};
 }
 function providerError(status,data){
+  const message=typeof data?.error?.message==='string'?data.error.message.toLowerCase():'';
+  if(status===403&&/zero.data.retention|\bzdr\b/.test(message)&&/pro|enterprise|plan|upgrade|permission/.test(message))return {status:503,error:'The selected route requests ZDR enforcement that this Vercel plan does not allow.',code:'zdr_plan_restricted'};
+  if(status===403&&/free.tier|free credits/.test(message)&&/model|provider/.test(message))return {status:503,error:'This model or provider is not permitted with the available free Gateway credits.',code:'free_tier_model_not_allowed'};
+
   const codes=['customer_verification_required','invalid_api_key','authentication_error','permission_denied','forbidden','free_tier_model_not_allowed','model_not_available_for_free_tier','insufficient_funds','quota_for_entity_exceeded'];
   const code=[data?.error?.code,data?.error?.type,data?.code].find(value=>codes.includes(value));
   if(code==='customer_verification_required')return {status:503,error:'Vercel requires account verification before server AI requests can run. Complete verification in AI Gateway; no paid top-up is required by Pull.',code};
@@ -56,4 +60,16 @@ export async function generateReply({body,userId,env,transport,tools={}}){
     }
   }
   return preserved()||{status:502,error:'Pull could not finish that request. Your workspace is kept.'};
+}
+
+// A fixed diagnostic cannot forward user questions, workspace records, history or tools.
+export async function probeAI({env,transport}){
+ const {credential}=aiConfiguration(env);if(!credential)return {status:503,error:'AI Gateway has no server credential.'};
+ try{
+  const response=await transport('https://ai-gateway.vercel.sh/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+credential,'Content-Type':'application/json'},signal:AbortSignal.timeout(20000),body:JSON.stringify({model:'deepseek/deepseek-v4.1-flash-1017',messages:[{role:'user',content:'Reply only: Hello.'}],max_tokens:64,stream:false,providerOptions:{gateway:{only:['deepinfra']}}})});
+  const data=await response.json().catch(()=>({}));
+  if(!response.ok)return providerError(response.status,data);
+  if(typeof data.choices?.[0]?.message?.content!=='string'||!data.choices[0].message.content.trim())return {status:502,error:'The direct model returned no text.'};
+  return {status:200,diagnostic:true,reply:data.choices[0].message.content.slice(0,200),model:data.model||'deepseek/deepseek-v4.1-flash-1017',notice:'Direct server route works. Your normal private workspace route has not changed.'};
+ }catch{return {status:503,error:'The direct server connection could not finish.'};}
 }

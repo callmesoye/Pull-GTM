@@ -1,7 +1,7 @@
 import {channelRequest} from './channels.js';
 import {createClient} from './supabase-rest.js';
 import {createHash,randomBytes} from 'node:crypto';
-import {aiConfiguration,prepareAI,generateReply} from './ai.js';
+import {aiConfiguration,prepareAI,generateReply,probeAI} from './ai.js';
 import {testAgentConnection} from './agent-test.js';
 import {createIntelligenceTools} from './intelligence.js';
 
@@ -127,11 +127,12 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
         catch(error){return reply(503,{error:error.message});}
       }
       if(resource==='ai'){
-        try{prepareAI(body);}catch(e){return reply(400,{error:e.message});}
+        if(body.action!=='probe'){try{prepareAI(body);}catch(e){return reply(400,{error:e.message});}}
         if(!aiConfiguration(env).credential)return reply(503,{error:'AI Gateway needs configuration before a model can respond.'});
         const allowed=await client(access).rpc('claim_pull_ai_request',{});
         if(allowed.error)return reply(503,{error:'AI usage controls are unavailable. Your workspace is kept.'});
         if(allowed.data!==true)return reply(429,{error:'The daily AI usage budget is reached. Your prospect list and manual tools remain available.'});
+        if(body.action==='probe'){const {status,...data}=await probeAI({env,transport});return reply(status,data);}
         const tools=createIntelligenceTools({db:client(access),ownerId:user.id,env,transport,useWorkspace:body.useWorkspace===true,allowResearch:body.allowResearch===true,now});
         const result=await generateReply({body,userId:user.id,env,transport,tools});const {status,...data}=result;return reply(status,data);
       }
