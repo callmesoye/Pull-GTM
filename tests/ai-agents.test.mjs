@@ -99,3 +99,9 @@ test('Authenticated direct probe cannot send supplied workspace, history, questi
  assert.equal(response.status,200);const provider=calls.find(c=>c.url.host==='ai-gateway.vercel.sh');
  assert.equal(provider.body.model,'deepseek/deepseek-v4.1-flash-1017');assert.deepEqual(provider.body.messages,[{role:'user',content:'Reply only: Hello.'}]);assert.equal(provider.body.tools,undefined);assert.deepEqual(provider.body.providerOptions.gateway.only,['deepinfra']);assert.ok(!JSON.stringify(provider.body).includes('SECRET_'));assert.ok(calls.some(c=>c.url.pathname.includes('claim_pull_ai_request')));
 });
+
+test('Free server route pins DeepInfra and cannot inherit an incompatible virtual model',async()=>{
+ const calls=[];const transport=async(url,options)=>{calls.push(JSON.parse(options.body));return Response.json({model:'deepseek/deepseek-v4.1-flash-1017',choices:[{message:{content:'Hello.'}}]});};
+ const result=await generateReply({body:{message:'Hello',useWorkspace:false},userId:'A',env:{...env,AI_GATEWAY_MODEL:'vmc/protected-route',PULL_AI_ROUTE:'deepinfra-free'},transport});
+ assert.equal(result.status,200);assert.equal(calls[0].model,'deepseek/deepseek-v4.1-flash-1017');assert.deepEqual(calls[0].providerOptions.gateway,{only:['deepinfra'],disallowPromptTraining:true});assert.ok(!JSON.stringify(calls[0]).includes('zeroDataRetention'));assert.ok(!JSON.stringify(calls[0]).includes('vmc/'));
+});

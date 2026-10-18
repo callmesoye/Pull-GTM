@@ -3,7 +3,7 @@ import {intelligenceToolDefinitions,modelToolResult} from './intelligence.js';
 export const defaultModel='openai/gpt-5.4-mini';
 const text=(value,max)=>typeof value==='string'?value.slice(0,max):'';
 const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
-export function aiConfiguration(env){const credential=env.PULL_HOSTED_AI_ENABLED==='false'?null:(env.VERCEL==='1'?(env.VERCEL_OIDC_TOKEN||env.AI_GATEWAY_API_KEY):(env.AI_GATEWAY_API_KEY||env.VERCEL_OIDC_TOKEN));return {credential,model:env.AI_GATEWAY_MODEL||defaultModel};}
+export function aiConfiguration(env){const credential=env.PULL_HOSTED_AI_ENABLED==='false'?null:(env.VERCEL==='1'?(env.VERCEL_OIDC_TOKEN||env.AI_GATEWAY_API_KEY):(env.AI_GATEWAY_API_KEY||env.VERCEL_OIDC_TOKEN));return {credential,model:env.PULL_AI_ROUTE==='deepinfra-free'?'deepseek/deepseek-v4.1-flash-1017':env.AI_GATEWAY_MODEL||defaultModel};}
 export function prepareAI(body){
   if(!object(body)||typeof body.message!=='string'||!body.message.trim()||body.message.length>5000)throw new Error('Write a question of up to 5,000 characters.');
   const c=body.useWorkspace===true&&object(body.context)?body.context:{};
@@ -36,7 +36,7 @@ export async function generateReply({body,userId,env,transport,tools={}}){
   for(let step=0;step<2;step++){
     let response,data;
     try{
-      response=await transport('https://ai-gateway.vercel.sh/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+credential,'Content-Type':'application/json'},signal:AbortSignal.timeout(30000),body:JSON.stringify({model,stream:false,max_completion_tokens:1800,safety_identifier:userId,messages,...(definitions.length?{tools:definitions,tool_choice:step===0?'auto':'none',parallel_tool_calls:false}:{})})});
+      response=await transport('https://ai-gateway.vercel.sh/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer '+credential,'Content-Type':'application/json'},signal:AbortSignal.timeout(30000),body:JSON.stringify({model,...(env.PULL_AI_ROUTE==='deepinfra-free'?{providerOptions:{gateway:{only:['deepinfra'],disallowPromptTraining:true}}}:{}),stream:false,max_completion_tokens:1800,safety_identifier:userId,messages,...(definitions.length?{tools:definitions,tool_choice:step===0?'auto':'none',parallel_tool_calls:false}:{})})});
       data=await response.json().catch(()=>({}));
     }catch{return preserved()||{status:503,error:'The model connection could not finish. Your workspace is kept.'};}
     if(!response.ok)return preserved()||providerError(response.status,data);
