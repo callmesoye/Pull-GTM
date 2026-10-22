@@ -12,6 +12,7 @@ import {renderSettingsView,renderSettingsProfile} from '../dist/settings.js';
 import {validateWorkspace} from '../dist/workspace.js';
 import {AccountGuard} from '../dist/cloud.js';
 import * as onboarding from '../dist/onboarding.js';
+import {renderProductFeedback,renderProductAdmin} from '../dist/product-feedback.js';
 
 // Run the real controller with a small DOM adapter. These checks exercise route,
 // import, filter, and account transitions without needing a model or cloud account.
@@ -23,7 +24,7 @@ async function workspace(initialHash='') {
   };
   const document={body:{dataset:{}},querySelector:element,querySelectorAll:()=>[],addEventListener(name,fn){events.set(name,[...(events.get(name)||[]),fn]);}};
   const location={hash:initialHash,protocol:'https:',pathname:'/',search:''};
-  const context={...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
+  const context={...engine,...onboarding,renderProductFeedback,renderProductAdmin,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
   vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,askAI,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData}),update:changes=>{if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
   return {app:context.testApp,element,location,calls,respond:fn=>{context.cloudRequest=fn;},hash:()=>windowEvents.get('hashchange')(),click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
@@ -42,6 +43,30 @@ test('Merged routes retain AI, continuous Settings, Automations, Connect, and Su
   assert.match(element('#section-tabs').innerHTML,/Shortlist/);
   app.navigate('drafts');
   assert.match(element('#section-tabs').innerHTML,/Conversations/);
+});
+
+test('Support exposes optional account-protected product feedback without disclosing another account',async()=>{
+  const {app,element}=await workspace();
+  app.navigate('support');
+  assert.doesNotMatch(element('#view-content').innerHTML,/id="product-feedback-form"/);
+  app.setCloudUser({id:'A',email:'a@example.test'});
+  app.navigate('support');
+  assert.match(element('#view-content').innerHTML,/id="product-feedback-form"/);
+  app.setCloudUser({id:'B',email:'b@example.test'});
+  app.navigate('support');
+  assert.match(element('#view-content').innerHTML,/id="product-feedback-form"/);
+  assert.doesNotMatch(element('#view-content').innerHTML,/feedback has been received/);
+});
+
+test('Staff-only product insights route starts with read-only access check',async()=>{
+  const {app,element,calls}=await workspace();
+  app.navigate('admin');
+  assert.match(element('#view-content').innerHTML,/authorized PULL staff/);
+  app.setCloudUser({id:'A',email:'a@example.test'});
+  app.navigate('admin');
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.ok(calls.includes('profile?staff=feedback'));
+  assert.match(element('#view-content').innerHTML,/recent sample/i);
 });
 
 test('Settings deep links survive navigation from another page',async()=>{
