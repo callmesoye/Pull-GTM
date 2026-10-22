@@ -65,3 +65,12 @@ test('zero provider observations do not create false success ratios',()=>{
  assert.equal(r.researchQuality.qualified_per_request,null);
  assert.deepEqual(r.reviewQueue,[]);
 });
+
+test('research UI displays unresolved sources separately and never offers to add them to Buyers',async()=>{
+  const {renderResearchResults}=await import('../dist/intelligence-ui.js');
+  const html=renderResearchResults([{people:[],reviewQueue:[{name:'Ada Okafor',title:'Founder',company:'Green Acre',source_url:'https://greenacre.example/team/ada',missing:['Location']}],target:{requested:30},notice:'No verified records.'}],0,s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])));
+  assert.match(html,/sources need research/);
+  assert.match(html,/Missing: Location/);
+  assert.match(html,/not qualified prospects/i);
+  assert.doesNotMatch(html,/Add \d+ to Buyers/);
+});
