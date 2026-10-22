@@ -74,3 +74,24 @@ test('research UI displays unresolved sources separately and never offers to add
   assert.match(html,/not qualified prospects/i);
   assert.doesNotMatch(html,/Add \d+ to Buyers/);
 });
+
+test('end-to-end discovery preserves incomplete location evidence without qualifying the person',async()=>{
+  const {discoveryInput,discoverPrivatePages}=await import('../server/discovery.js');
+  const input=discoveryInput({audience:'Founder',industry:'Agriculture',location:'Lagos',limit:2});
+  let requests=0;
+  const result=await discoverPrivatePages(input,{key:'fixture',provider:'serper',maxQueries:1,
+    transport:async()=>{requests++;return Response.json({organic:[{
+      title:'Ada Okafor — Founder at Green Acre',
+      link:'https://greenacre.example/team/ada',
+      snippet:'Ada Okafor is founder at Green Acre, a private company active in agriculture.'
+    }]});}
+  });
+  assert.equal(requests,1);
+  assert.equal(result.people.length,0);
+  assert.equal(result.target.returned,0);
+  assert.equal(result.reviewQueue.length,1);
+  assert.deepEqual(result.reviewQueue[0].missing,['Location']);
+  assert.equal(result.reviewQueue[0].eligible_for_outreach,false);
+  assert.equal(result.researchQuality.qualified,0);
+  assert.equal(result.researchQuality.needs_research,1);
+});
