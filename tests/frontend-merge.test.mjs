@@ -1,3 +1,7 @@
+import {renderAuthWorkspace} from '../dist/auth-workspace.js';
+import {renderDraftWorkspace,draftChannels} from '../dist/draft-workspace.js';
+import {createContextualWorkspace} from '../dist/contextual-workspace.js';
+import {renderOpportunityWorkspace} from '../dist/opportunity-workspace.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -23,8 +27,8 @@ async function workspace(initialHash='') {
   };
   const document={body:{dataset:{}},querySelector:element,querySelectorAll:()=>[],addEventListener(name,fn){events.set(name,[...(events.get(name)||[]),fn]);}};
   const location={hash:initialHash,protocol:'https:',pathname:'/',search:''};
-  const context={...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
-  vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,askAI,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData}),update:changes=>{if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
+  const context={renderAuthWorkspace,renderDraftWorkspace,draftChannels,createContextualWorkspace,renderOpportunityWorkspace,...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
+  vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,askAI,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData,onboardingDrafts}),update:changes=>{if(changes.onboardingDrafts)onboardingDrafts=changes.onboardingDrafts;if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
   return {app:context.testApp,element,location,calls,respond:fn=>{context.cloudRequest=fn;},hash:()=>windowEvents.get('hashchange')(),click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
 }
@@ -131,7 +135,8 @@ test('A channel draft opens only the supplied social profile for manual handoff'
   const {app,element,click}=await workspace();
   app.update({state:{mode:'import',prospects:[{id:'ada',name:'Ada Okafor',title:'Founder',company:'Green Acre',origin:'import',private_verified:'yes',x_url:'https://x.com/ada'}],rules:{...app.get().state.rules,roles:'Founder',evidence:false},shortlist:['ada'],drafts:{ada:{body:'Hello Ada',subject:'Hello',channel:'x',ready:false}}}});
   app.navigate('drafts');
-  const html=element('#view-content').innerHTML;
+  await click({draftEditor:'ada'});
+  const html=element('#dialog-content').innerHTML;
   assert.match(html,/X · manual handoff/);
   assert.match(html,/href="https:\/\/x.com\/ada"/);
   assert.match(html,/Pull does not send automated social messages/);
@@ -248,4 +253,31 @@ test('Recovery callback opens password selection without treating it as a normal
   const w=await workspace('#auth=recovery');
   assert.match(w.element('#dialog-content').innerHTML,/password-reset-form/);
   assert.equal(w.app.get().cloud.user,null);
+});
+
+test('AI opportunity inspection is contextual and never imports or approves a person implicitly',async()=>{
+ const w=await workspace('#assistant');w.app.setCloudUser({id:'owner',email:'owner@example.test'});
+ const result={people:[{id:'research-ada',name:'Ada Fixture',title:'CEO',company:'Fixture Studio',source_url:'https://fixture.example/team',source_excerpt:'Private studio'}],input:{audience:'CEO',location:'Lagos'},notice:'Fixture research'};
+ w.respond(async path=>path==='ai'?{reply:'One source to review.',research:[result]}:{});
+ await w.app.askAI('Find a private studio');assert.equal(w.app.get().state.prospects.length,0);
+ await w.click({aiOpportunity:'1:0:0'});assert.equal(w.app.get().state.prospects.length,0);
+ assert.match(w.element('#dialog-content').innerHTML,/Ada Fixture/);assert.match(w.element('#dialog-content .dialog-footer').innerHTML,/Add to Buyers for review/);assert.doesNotMatch(w.element('#dialog-content .dialog-footer').innerHTML,/data-approve/);
+ await w.click({aiKeep:'1:0:0'});assert.equal(w.app.get().state.prospects.length,1);assert.equal(w.app.get().state.shortlist.length,0);
+});
+
+test('Old AI opportunity controls cannot import research after an account switch',async()=>{
+ const w=await workspace('#assistant');w.app.setCloudUser({id:'owner',email:'owner@example.test'});
+ w.respond(async()=>({reply:'Fixture',research:[{people:[{id:'old',name:'Old Fixture',source_url:'https://fixture.example/team'}]}]}));
+ await w.app.askAI('Find a fixture');w.app.setCloudUser({id:'other',email:'other@example.test'});
+ await w.click({aiKeep:'1:0:0'});assert.equal(w.app.get().state.prospects.length,0);
+});
+
+ test('account changes clear unfinished onboarding details from the previous session',async()=>{
+  const {app}=await workspace();
+  app.setCloudUser({id:'first'});
+  app.update({onboardingDrafts:{buyers:{identity:'Private workspace',offer:'Private brief'}}});
+  app.setCloudUser({id:'first'});
+  assert.equal(app.get().onboardingDrafts.buyers.offer,'Private brief');
+  app.setCloudUser({id:'second'});
+  assert.equal(Object.keys(app.get().onboardingDrafts).length,0);
 });

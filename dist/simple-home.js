@@ -5,7 +5,7 @@ export function renderSimpleHome({ state, items = [], next, labels, escape, icon
   const count = value => new Intl.NumberFormat().format(value);
   const stage = ['setup', 'import', 'prospects', 'drafts'].includes(next) ? next : 'import';
   const purpose = {
-    business:{label:'Business growth',headline:'Find the right businesses to help.',detail:'Set your audience, import a list you own, and review the evidence behind every match.',import:'Import a customer or prospect list'},
+    business:{label:'Business growth',headline:'Find the right businesses to help.',detail:'Bring your own prospect list. Find your audience and review the evidence before reaching out.',import:'Import a customer or prospect list'},
     trade:{label:'Trade & commerce',headline:'Turn real enquiries into your next conversation.',detail:'For car dealers, property sellers, retailers and service traders. Bring listings or enquiries you already have; Pull helps you qualify and follow up.',import:'Import listings or enquiries'},
     career:{label:'Career growth',headline:'Make your next introduction count.',detail:'Build a private list of companies and contacts you know, review fit, then prepare a thoughtful introduction.',import:'Import companies or contacts'}
   }[state.persona] || {label:'Business growth',headline:'Find the right businesses to help.',detail:'Set your audience, import a list you own, and review every match.',import:'Import a prospect list'};
@@ -26,7 +26,7 @@ export function renderSimpleHome({ state, items = [], next, labels, escape, icon
     const date = new Date(value);
     return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date) : 'Time unavailable';
   };
-  return `<section class="home-purpose panel"><div><span class="section-kicker">${escape(purpose.label)}</span><h2>${escape(purpose.headline)}</h2><p>${escape(purpose.detail)}</p></div><button class="button secondary small" data-action="workspace">Change my goal</button></section><div class="simple-home-grid">
+  return `<section class="home-purpose panel" aria-labelledby="home-purpose-title"><div class="home-purpose-copy"><span class="section-kicker">${escape(purpose.label)}</span><h2 id="home-purpose-title">${escape(purpose.headline)}</h2><p>${escape(purpose.detail)}</p></div><button class="home-purpose-change" data-action="workspace">Change my goal${icon('arrow')}</button></section><div class="simple-home-grid">
     <section class="panel home-next" aria-labelledby="next-task-title">
       <p class="small-print">Next task</p>
       <h2 id="next-task-title">${title}</h2>
