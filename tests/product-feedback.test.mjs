@@ -19,7 +19,7 @@ const dbFixture=({used=[],insertError=null,role=null,entries=[]}={})=>{
     const query={
       select:()=>query,eq:()=>query,order:()=>query,limit:()=>query,
       insert:data=>{record.inserted.push(data);return query;},
-      all:async()=>({data:record.inserted.length?entries:used.map(slot=>({slot})),error:null}),
+      all:async()=>({data:entries.length?entries:used.map(slot=>({slot})),error:null}),
       maybeSingle:async()=>insertError?{data:null,error:{code:insertError}}:{data:{id:'sample-id'},error:null}
     };
     return query;
