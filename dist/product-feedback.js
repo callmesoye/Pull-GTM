@@ -1,0 +1,18 @@
+// Pure presentational components. Backend and RLS enforce real authorization.
+const types={bug:'Something did not work',confusing:'Something was confusing',suggestion:'An improvement idea',positive:'Something worked well'};
+export function renderProductFeedback({signedIn=false,busy=false,notice='',error='',escape:e}={}) {
+  const choices=Object.entries(types).map(([key,label])=>'<option value="'+key+'">'+e(label)+'</option>').join('');
+  const form=signedIn
+    ?'<form id="product-feedback-form"><div class="field"><label for="feedback-kind">What would you like to share?</label><select id="feedback-kind" name="kind" required>'+choices+'</select></div><div class="field"><label for="feedback-message">Tell us a little more</label><textarea id="feedback-message" name="message" rows="4" minlength="10" maxlength="1000" required placeholder="I was trying to…"></textarea></div><p class="small-print">Do not include passwords, access keys, contact lists or private customer information. Up to five submissions per UTC day.</p><button class="button primary" type="submit" '+(busy?'disabled':'')+'>'+(busy?'Sending feedback…':'Send feedback')+'</button></form>'
+    :'<p class="small-print">Sign in to send feedback from your own account.</p><button class="button secondary" data-action="account">Sign in to share feedback</button>';
+  return '<section class="panel product-feedback" aria-labelledby="feedback-title"><div class="panel-head"><div><span class="section-kicker">HELP SHAPE PULL</span><h2 id="feedback-title">Tell us what would make Pull better.</h2><p>What worked? What got in your way? Your feedback helps us improve.</p></div></div><div class="product-feedback-body">'+form+(notice?'<p role="status" class="product-feedback-notice">'+e(notice)+'</p>':'')+(error?'<p role="alert" class="form-error">'+e(error)+'</p>':'')+'</div></section>';
+}
+export function renderProductAdmin({signedIn=false,loading=false,loaded=false,error='',entries=[],categories={},escape:e}={}) {
+  const title='<section class="panel product-feedback"><div class="panel-head"><h2>Staff insights</h2></div>';
+  if(!signedIn)return title+'<p class="product-feedback-body">Sign in with an authorized PULL staff account to continue.</p></section>';
+  if(loading||!loaded&&!error)return title+'<p class="product-feedback-body" role="status">Checking access to product feedback…</p></section>';
+  if(error)return title+'<p class="product-feedback-body" role="alert">'+e(error)+'</p></section>';
+  const metrics=Object.entries(types).map(([kind,label])=>'<div><strong>'+Number(categories[kind]||0)+'</strong><span>'+e(label)+'</span></div>').join('');
+  const items=entries.map(item=>'<li><div><strong>'+e(types[item.kind]||'Feedback')+'</strong><time datetime="'+e(item.created_at||'')+'">'+e(item.created_at?new Date(item.created_at).toLocaleDateString():'Date unavailable')+'</time></div><p>'+e(item.message||'')+'</p></li>').join('');
+  return '<section class="product-insights" aria-labelledby="insights-title"><div class="panel"><div class="panel-head"><div><span class="section-kicker">PULL PRODUCT INSIGHTS</span><h2 id="insights-title">What users are telling us</h2><p>Latest '+entries.length+' feedback entries. This is a recent sample, not total submissions.</p></div><button class="button secondary small" data-action="product-admin-refresh">Refresh</button></div><div class="product-feedback-metrics">'+metrics+'</div></div><div class="panel"><div class="panel-head"><h3>Recent feedback</h3></div>'+(entries.length?'<ol class="product-feedback-list">'+items+'</ol>':'<p class="product-feedback-body">No feedback entries available yet.</p>')+'</div></section>';
+}
