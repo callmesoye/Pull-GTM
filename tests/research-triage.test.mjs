@@ -49,7 +49,7 @@ test('deduplicates source and identity and excludes already qualified people',()
 });
 
 test('caps review queue and keeps analytics distinct from precision or independently verified fit',()=>{
- const list=Array.from({length:30},(_,i)=>partial({title:'Ada'+i+' Okafor — Founder at Green Acre',url:'https://greenacre.example/team/ada'+i}));
+ const list=Array.from({length:30},(_,i)=>partial({title:'Ada'+String.fromCharCode(65+i)+' Okafor — Founder at Green Acre',url:'https://greenacre.example/team/ada'+i}));
  const r=buildResearchTriage({input:{limit:30},candidates:list,diagnostics:{providerResults:80,missingIdentity:15,missingTargetEvidence:12},requestsUsed:8});
  assert.equal(r.reviewQueue.length,12);
  assert.equal(r.researchQuality.dominant_observed_blocker.code,'missingIdentity');
