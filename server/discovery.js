@@ -1,4 +1,5 @@
 import {personFromSource,parseSourceIdentity} from './person-evidence.js';
+import {buildResearchTriage} from './research-triage.js';
 import {canonicalProfile} from '../dist/prospect-records.js';
 import {assessPrivateSector} from '../dist/prospect-policy.js';
 
@@ -522,5 +523,6 @@ export async function discoverPrivatePages(input,{key,provider='brave',maxQuerie
   const notice=selected.length?`${selected.length} named ${selected.length===1?'prospect matches':'prospects match'} the audience, industry, and location in indexed search evidence. Employer evidence is linked where used. They are not verified customers, contacts, or buyers; buying intent and private contact details are not assumed. Confirm current details and private ownership on each original source before outreach.`:`Search checked ${diagnostics.providerResults} results but found no named private-sector prospects with evidence for all your filters. ${candidates.length?'Relevant source pages are available to inspect. ':''}Results are never filled with invented people.`;
   const endings={source_exhausted:'The available source queries were exhausted.',request_budget_reached:'The request budget was reached.',daily_budget_reached:'The daily source-search budget was reached.',time_budget_reached:'The search time limit was reached.',budget_unavailable:'Search budget controls became unavailable; no further provider requests were sent.',provider_unavailable:'The search provider became unavailable.',provider_credits_exhausted:'The provider has no free search credits available; no further requests were sent.'};
   const shortfall=remaining?` Requested ${input.limit}; found ${selected.length}; ${remaining} still needed with the original filters. ${endings[reason]||'The search stopped.'}`:'';
-  return {configured:true,provider,requestsUsed,requested:input.limit,returned:selected.length,candidates:candidates.slice(0,input.limit),people:selected,diagnostics,target,notice:notice+shortfall+(diagnostics.partial?remaining?' One search request failed; the available results are shown. Retry to complete the search.':' One search request failed; the requested count was reached using the available results.':'')};
+  const researchTriage=buildResearchTriage({input,people:selected,candidates,diagnostics,requestsUsed});
+  return {configured:true,provider,requestsUsed,requested:input.limit,returned:selected.length,candidates:candidates.slice(0,input.limit),people:selected,diagnostics,target,...researchTriage,notice:notice+shortfall+(diagnostics.partial?remaining?' One search request failed; the available results are shown. Retry to complete the search.':' One search request failed; the requested count was reached using the available results.':'')};
 }
