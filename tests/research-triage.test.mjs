@@ -33,6 +33,8 @@ test('wrong audience, source mismatch, fully matched, unsafe links and source-on
   partial({missing:[]}),
   partial({url:'http://greenacre.example/team/ada'}),
   partial({url:'https://localhost/team/ada'}),
+  partial({url:'https://127.0.0.1/team/ada'}),
+  partial({url:'https://[::1]/team/ada'}),
   partial({title:'Green Acre farming company in Lagos'}),
   partial({matched:[]}),
   partial({private_sector_basis:''})
