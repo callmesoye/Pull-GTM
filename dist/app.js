@@ -26,7 +26,7 @@ let agentState={configured:null,endpoint:null,tokens:[],busy:false,error:'',oneT
 let automationData={workflows:[],runs:[],loading:false};
 let nativeChannels={connections:[],providers:[],deliveries:[],error:'',loading:false};
 let profile=null,profileLoading=false,profileError='';
-let productFeedbackUi={busy:false,notice:'',error:''};
+let productFeedbackUi={busy:false,notice:'',error:'',draft:'',kind:'bug'};
 let productAdminUi={loading:false,loaded:false,error:'',entries:[],categories:{}};
 let discoveryEpoch=0;
 let discovery={configured:null,busy:false,error:'',candidates:[],people:[],notice:'',search:{audience:'',industry:'',location:'',source:'',limit:30}};
@@ -94,11 +94,11 @@ document.addEventListener('submit',async e=>{
   e.preventDefault();
   if(productFeedbackUi.busy||!cloud.user||!cloud.verified)return;
   const ticket=accountGuard.ticket(),form=new FormData(e.target);
-  productFeedbackUi={busy:true,notice:'',error:''};
+  productFeedbackUi={busy:true,notice:'',error:'',draft:String(form.get('message')||''),kind:String(form.get('kind')||'bug')};
   if(view==='support')render();
   try{
     await cloudRequest('product-feedback',{kind:String(form.get('kind')||''),message:String(form.get('message')||'')},ticket.id);
-    if(accountGuard.current(ticket))productFeedbackUi.notice='Thank you. Your feedback has been received.';
+    if(accountGuard.current(ticket)){productFeedbackUi.notice='Thank you. Your feedback has been received.';productFeedbackUi.draft='';productFeedbackUi.kind='bug';}
   }catch(error){
     if(accountGuard.current(ticket))productFeedbackUi.error=error.message;
   }finally{
@@ -323,7 +323,7 @@ document.addEventListener('submit',async e=>{
   }catch(error){if(form.isConnected)$('#onboard-error').textContent=error.message;}finally{button.disabled=false;}
 });
 function setCloudUser(user){
-  const previous=cloud.user?.id,changed=accountGuard.set(user);if(changed){discoveryEpoch++;if(previous){discovery={configured:discovery.configured,busy:false,error:'',candidates:[],people:[],notice:'',searched:false,search:{audience:'',industry:'',location:'',source:'',limit:30}};}automationData={workflows:[],runs:[],loading:false};profile=null;profileError='';profileLoading=false;productFeedbackUi={busy:false,notice:'',error:''};productAdminUi={loading:false,loaded:false,error:'',entries:[],categories:{}};}cloud.user=user;cloud.verified=Boolean(user);if(changed)connectExperience.accountChanged?.();
+  const previous=cloud.user?.id,changed=accountGuard.set(user);if(changed){discoveryEpoch++;if(previous){discovery={configured:discovery.configured,busy:false,error:'',candidates:[],people:[],notice:'',searched:false,search:{audience:'',industry:'',location:'',source:'',limit:30}};}automationData={workflows:[],runs:[],loading:false};profile=null;profileError='';profileLoading=false;productFeedbackUi={busy:false,notice:'',error:'',draft:'',kind:'bug'};productAdminUi={loading:false,loaded:false,error:'',entries:[],categories:{}};}cloud.user=user;cloud.verified=Boolean(user);if(changed)connectExperience.accountChanged?.();
   if(changed){nativeChannels={connections:[],providers:[],deliveries:[],error:'',loading:false};cloud.revision=0;cloud.savedAt=null;pendingCloudLoad=null;cloud.dirty=false;}
   if((previous&&previous!==user?.id)||(workspaceOwner&&workspaceOwner!==user?.id)){
     state=structuredClone(defaults);workspaceOwner=null;save();cloud.dirty=false;query='';tab='fit';$('#detail-dialog').close();navigate('home');
