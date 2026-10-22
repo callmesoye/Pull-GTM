@@ -229,7 +229,7 @@ test('Switching owner clears private research queue and its usage-quality diagno
   }],researchQuality:{qualified:0,needs_research:1}});
   app.setCloudUser({id:'B',email:'b@example.test'});
   app.navigate('prospects');
-  assert.deepEqual(app.get().discovery.reviewQueue,[]);
+  assert.equal(app.get().discovery.reviewQueue.length,0);
   assert.equal(app.get().discovery.researchQuality,null);
   assert.doesNotMatch(element('#view-content').innerHTML,/Ada Okafor/);
 });
