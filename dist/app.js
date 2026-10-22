@@ -78,7 +78,7 @@ async function loadProductAdmin(){
   productAdminUi={loading:true,loaded:false,error:'',entries:[],categories:{}};
   if(view==='admin')render();
   try{
-    const response=await cloudRequest('product-admin',undefined,ticket.id);
+    const response=await cloudRequest('profile?staff=feedback',undefined,ticket.id);
     if(!accountGuard.current(ticket))return;
     productAdminUi={loading:false,loaded:true,error:'',entries:Array.isArray(response.entries)?response.entries:[],categories:response.categories||{}};
   }catch(error){
