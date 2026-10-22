@@ -65,7 +65,7 @@ test('Staff-only product insights route starts with read-only access check',asyn
   app.setCloudUser({id:'A',email:'a@example.test'});
   app.navigate('admin');
   await new Promise(resolve=>setImmediate(resolve));
-  assert.ok(calls.includes('product-admin'));
+  assert.ok(calls.includes('profile?staff=feedback'));
   assert.match(element('#view-content').innerHTML,/recent sample/i);
 });
 
