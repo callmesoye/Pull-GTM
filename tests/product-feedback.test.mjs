@@ -95,6 +95,11 @@ test('feedback and staff views escape untrusted messages and explain restricted 
   assert.match(html,/&lt;img/);assert.doesNotMatch(html,/<img src=x/);
   assert.match(html,/recent sample/i);
   assert.match(renderProductAdmin({signedIn:true,loaded:false,error:'Not authorized.',escape}),/Not authorized/);
+  const retry=renderProductFeedback({signedIn:true,draft:'<script>untrusted</script>',kind:'suggestion',error:'Try again',escape});
+  assert.match(retry,/&lt;script&gt;untrusted&lt;\/script&gt;/);
+  assert.doesNotMatch(retry,/<script>untrusted<\/script>/);
+  assert.match(retry,/value="suggestion" selected/);
+  assert.match(retry,/Try again/);
 });
 
 test('feedback migration provides RLS, column restrictions, and hard five-slot quota',()=>{
