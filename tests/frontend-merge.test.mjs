@@ -186,6 +186,54 @@ test('An empty live search preserves existing prospects and shows a completed se
   assert.equal(app.get().state.prospects[0].id,'kept');assert.equal(app.get().discovery.searched,true);assert.equal(app.get().discovery.notice,'No matching prospects');
 });
 
+
+test('Native Buyers displays evidence-gap research without treating it as an imported or qualified prospect',async()=>{
+  const {app,element}=await workspace();
+  app.applyDiscoveryResults({configured:true,people:[],target:{requested:30,returned:0,remaining:30,status:'empty',reason:'request_budget_reached'},
+    researchQuality:{qualified:0,needs_research:1},reviewQueue:[{
+      name:'Ada Okafor',title:'Founder',company:'Green Acre',source_url:'https://greenacre.example/team/ada',
+      missing:['Location'],status:'needs_research',eligible_for_outreach:false
+    }]});
+  app.navigate('prospects');
+  const html=element('#view-content').innerHTML;
+  assert.match(html,/1 source needs more research/);
+  assert.match(html,/Not qualified prospects/);
+  assert.match(html,/Check: Location/);
+  assert.match(html,/Review source/);
+  assert.match(html,/0 of 30 requested prospects found/);
+  assert.equal(app.get().state.prospects.length,0);
+  assert.equal(app.get().state.shortlist.length,0);
+  assert.ok(!html.includes('data-prospect="source-ada"'));
+});
+
+test('Native Buyers escapes untrusted research text and does not link unapproved protocols',async()=>{
+  const {app,element}=await workspace();
+  app.applyDiscoveryResults({configured:true,people:[],reviewQueue:[{
+    name:'<img src=x onerror=alert(1)>',title:'Founder',company:'Green Acre',
+    source_url:'http://greenacre.example/a',missing:['Location']
+  }]});
+  app.navigate('prospects');
+  const html=element('#view-content').innerHTML;
+  assert.match(html,/&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.doesNotMatch(html,/<img src=x onerror=/);
+  assert.match(html,/Source unavailable/);
+  assert.doesNotMatch(html,/href="http:\/\/greenacre\.example\/a"/);
+});
+
+test('Switching owner clears private research queue and its usage-quality diagnostics',async()=>{
+  const {app,element}=await workspace();
+  app.setCloudUser({id:'A',email:'a@example.test'});
+  app.applyDiscoveryResults({configured:true,people:[],reviewQueue:[{
+    name:'Ada Okafor',title:'Founder',company:'Green Acre',source_url:'https://greenacre.example/team/ada',
+    missing:['Location']
+  }],researchQuality:{qualified:0,needs_research:1}});
+  app.setCloudUser({id:'B',email:'b@example.test'});
+  app.navigate('prospects');
+  assert.deepEqual(app.get().discovery.reviewQueue,[]);
+  assert.equal(app.get().discovery.researchQuality,null);
+  assert.doesNotMatch(element('#view-content').innerHTML,/Ada Okafor/);
+});
+
 test('A repeated discovery preserves suppression and invalidates approvals after an employer conflict',async()=>{
   const {app}=await workspace();
   app.update({state:{mode:'import',prospects:[{id:'source-ada',name:'Ada Okafor',title:'CEO',company:'Green Acre',source_url:'https://example.test/ada',origin:'discovery',suppressed:true,private_verified:'yes'}],shortlist:['source-ada']}});
