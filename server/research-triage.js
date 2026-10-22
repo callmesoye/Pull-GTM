@@ -1,3 +1,4 @@
+import {isIP} from 'node:net';
 import {parseSourceIdentity} from './person-evidence.js';
 
 // Only server-screened source candidates belong here. This cannot approve,
@@ -9,7 +10,7 @@ function publicSource(value) {
   try {
     const url = new URL(value);
     if (url.protocol !== 'https:' || url.username || url.password || url.port) return null;
-    if (!url.hostname.includes('.') || /(?:^|\.)(?:localhost|local|internal|test)$/.test(url.hostname)) return null;
+    if (isIP(url.hostname.replace(/^\[|\]$/g,'')) || !url.hostname.includes('.') || /(?:^|\.)(?:localhost|local|internal|test)$/.test(url.hostname)) return null;
     url.hash = '';
     return url.href;
   } catch { return null; }
