@@ -5,7 +5,7 @@ Updated 22 October 2026. No production migration, telemetry collection, or relea
 ## Included
 - POST /api/product-feedback: signed-in, origin-checked, category/message validated; up to five submissions per user per UTC day. Database uniqueness on (user_id, feedback_day, slot) handles concurrent/direct PostgREST writes. Id, day and timestamps are server assigned. Races are reported as retryable conflicts, never as success.
 - Support view: signed-in feedback form, preserves retryable drafts, clears when accounts change.
-- GET /api/product-admin: verified staff (owner/analyst) only, latest 40 feedback records and counts over that bounded sample, not all-time totals. No user email or API tokens.
+- GET /api/profile?staff=feedback: verified staff (owner/analyst) only, latest 40 feedback records and counts over that bounded sample, not all-time totals. No user email or API tokens.
 - Product-insights UI at #admin. Direct URL access is not permission; the backend and RLS enforce roles. Ordinary navigation does not advertise the staff page.
 - Existing categorical PostHog event adapter remains unconnected to frontend; no hidden analytics was added.
 
