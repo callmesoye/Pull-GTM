@@ -163,3 +163,15 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .home-purpose-change .ui-icon{width:16px;height:16px}
 @media(hover:hover){.home-purpose-change:hover{background:#f1f4fb;border-color:#e0e6f2}}
 @media(max-width:767px){.home-purpose{align-items:flex-start;flex-direction:column;gap:18px;padding:24px;margin-bottom:20px;border-radius:16px}.home-purpose h2{font-size:1.45rem;line-height:1.3}.home-purpose p{font-size:.85rem;line-height:1.7;margin-top:12px}.home-purpose .section-kicker{font-size:.65rem;margin-bottom:11px}.home-purpose-change{padding:0 3px;min-height:44px;margin-left:-3px;font-size:.77rem}}
+
+/* Journey continuity, with loading shown only while real research is pending. */
+.research-loading{padding:20px 0 8px;color:var(--muted);font-size:.82rem}
+.research-loading-label{display:block;margin-bottom:16px;font-weight:550;color:var(--ink)}
+.research-loading-row{display:grid;grid-template-columns:32px minmax(0,1fr) 25%;gap:14px;align-items:center;padding:15px 0;border-top:1px solid var(--line)}
+.research-loading-row i,.research-loading-row span{height:10px;border-radius:6px;background:#e9edf5;animation:pull-research-wait 1.3s ease-in-out infinite alternate}
+.research-loading-row i{width:32px;height:32px;border-radius:50%}.research-loading small{display:block;margin-top:12px;font-size:.74rem}
+@keyframes pull-research-wait{to{opacity:.45}}
+.prospect-table .link-button[data-prospect]{display:inline-flex;align-items:center;gap:7px;min-height:44px;white-space:nowrap}
+.prospect-table .link-button[data-prospect] .ui-icon{width:15px;height:15px;transition:transform var(--motion-hover) var(--ease-standard)}
+@media(hover:hover){.prospect-table .link-button[data-prospect]:hover .ui-icon{transform:translateX(3px)}}
+@media(prefers-reduced-motion:reduce){.research-loading-row i,.research-loading-row span{animation:none}.prospect-table .link-button[data-prospect] .ui-icon{transition:none}}
