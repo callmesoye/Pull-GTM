@@ -1,5 +1,11 @@
 # Native delivery: owner setup and verification
 
+## Linked identity and token vault update
+
+The Connections screen now distinguishes a verified identity from permission to send. LinkedIn OpenID Connect requests only `openid profile email`; it cannot send automated LinkedIn messages. Register `https://pull-gtm.vercel.app/api/channels?callback=linkedin` with an approved LinkedIn application and set `PULL_LINKEDIN_CLIENT_ID` and `PULL_LINKEDIN_CLIENT_SECRET` in Vercel before offering the connection. Facebook and Instagram remain manual handoffs until approved Meta apps and account-specific permissions exist. No social password is collected.
+
+Apply `database/channel-vault-prep.sql` before deploying the matching channel API. Once that API is Ready, apply `database/channel-vault-lockdown.sql` to remove browser read/write access to encrypted token ciphertext. Server vault functions require an owner session and a server-only capability. Disconnect erases stored ciphertext even if the developer application is later removed. Users can also revoke access in the provider's settings.
+
 Implemented adapters: Gmail email and X direct messages. Neither is a verified live connection until an owner configures its developer app, a user authorizes it, and a controlled provider submission succeeds. No social password, raw token or app secret is returned to browser code.
 
 ## Application configuration
