@@ -44,5 +44,5 @@ export function createIntelligenceTools({db,ownerId,env,transport,useWorkspace=f
 
 export function modelToolResult(result){
   if(result?.type!=='research')return result;
-  return {type:'research',input:result.input,provider:result.provider,requestsUsed:result.requestsUsed,target:result.target,notice:result.notice,diagnostics:result.diagnostics,people:(result.people||[]).slice(0,50).map(p=>({name:p.name,title:p.title,company:p.company,industry:p.industry,location:p.location,source_url:p.source_url,source_excerpt:p.source_excerpt,supporting_sources:p.supporting_sources}))};
+  return {type:'research',input:result.input,provider:result.provider,requestsUsed:result.requestsUsed,target:result.target,notice:result.notice,diagnostics:result.diagnostics,researchQuality:result.researchQuality,reviewQueue:(result.reviewQueue||[]).slice(0,12),people:(result.people||[]).slice(0,50).map(p=>({name:p.name,title:p.title,company:p.company,industry:p.industry,location:p.location,source_url:p.source_url,source_excerpt:p.source_excerpt,supporting_sources:p.supporting_sources}))};
 }
