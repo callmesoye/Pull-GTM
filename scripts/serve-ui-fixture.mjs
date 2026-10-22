@@ -7,6 +7,7 @@ const root=fileURLToPath(new URL('../dist/',import.meta.url));
 const types={'.html':'text/html','.js':'text/javascript','.css':'text/css','.svg':'image/svg+xml','.json':'application/json'};
 const user={id:'11111111-1111-4111-8111-111111111111',email:'owner@pull.example'};
 let saved=null,revision=0;
+let workflows=[{id:'fixture-review',name:'Fictional audience review',kind:'audience_review',trigger:'manual',enabled:true,destination:'none'},{id:'fixture-failure',name:'Fictional failure recovery',kind:'audience_review',trigger:'manual',enabled:true,destination:'none'}],runs=[];
 http.createServer(async(req,res)=>{
  const url=new URL(req.url,'http://127.0.0.1');
  const reply=(status,data,cookie)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store',...(cookie?{'Set-Cookie':cookie}:{})});res.end(JSON.stringify(data));};
@@ -29,7 +30,18 @@ http.createServer(async(req,res)=>{
     if(req.method==='GET')return reply(200,{configured:true,model:'Local fixture'});
     return reply(200,{reply:'Fictional QA result: one source record is ready for evidence review. Nothing has been added or sent.',research:[{people:[{id:'qa-prospect',name:'Amara Example',title:'Founder',company:'Example Studio (fictional)',industry:'Software',location:'Lagos, Nigeria',source_url:'https://studio.example/team',source_excerpt:'Fictional private software studio for interface QA.',search_match:'Matches the requested role and sector in this fixture.'}],input:{audience:'Founder',industry:'Software',location:'Lagos',limit:1},target:{requested:1,returned:1,remaining:0},notice:'Explicitly fictional UI test data. This is not a live search.'}]});
    }
-   if(url.pathname==='/api/automations')return reply(200,{configured:true,schedulingAvailable:false,workflows:[],runs:[],schedules:[]});
+   if(url.pathname==='/api/automations'){
+    if(req.method==='POST'){
+     await new Promise(resolve=>setTimeout(resolve,450)); // Simulated network latency, local QA only.
+     if(body.action==='create')workflows.push({...body,id:'fixture-'+Date.now()});
+     if(body.action==='update')workflows=workflows.map(w=>w.id===body.id?{...w,...body}:w).filter(w=>!w.archived);
+     if(body.action==='run'){
+      if(body.id==='fixture-failure')return reply(503,{error:'Fictional workflow failure. Your workspace is preserved; retry is available.'});
+      const workflow=workflows.find(w=>w.id===body.id);runs.unshift({name:workflow?.name||'Fictional review',kind:'audience_review',created_at:new Date().toISOString(),result_revision:revision,counts:{matches:0,needs_evidence:0,excluded:0,data_origin:'example'}});
+     }
+    }
+    return reply(200,{configured:true,schedulingAvailable:false,workflows,runs,schedules:[]});
+   }
    if(url.pathname==='/api/discovery')return reply(200,{configured:false,people:[],notice:'Live search is disabled in this local fixture.'});
    return reply(200,{configured:false,tokens:[],connections:[],deliveries:[],messages:[]});
   }

@@ -175,3 +175,33 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .prospect-table .link-button[data-prospect] .ui-icon{width:15px;height:15px;transition:transform var(--motion-hover) var(--ease-standard)}
 @media(hover:hover){.prospect-table .link-button[data-prospect]:hover .ui-icon{transform:translateX(3px)}}
 @media(prefers-reduced-motion:reduce){.research-loading-row i,.research-loading-row span{animation:none}.prospect-table .link-button[data-prospect] .ui-icon{transition:none}}
+
+/* One tactile language for all supported controls and truthful pending states. */
+:where(.home-purpose-change,.global-search,.client-choice,.person-name,.draft-summary button,.overview-row,.inbox-lane,.section-tab,summary){transition:background-color var(--motion-hover) var(--ease-standard),color var(--motion-hover) var(--ease-standard),border-color var(--motion-hover) var(--ease-standard),transform var(--motion-press) var(--ease-standard)}
+:where(.home-purpose-change,.global-search,.client-choice,.person-name,.overview-row,.inbox-lane,.section-tab):active{transform:scale(.985)}
+:where(.field,.ai-composer,.connect-copy-row):focus-within{border-color:var(--blue)}
+button[aria-busy=true]{cursor:progress;position:relative}
+button[aria-busy=true]::after{content:"";display:inline-block;width:12px;height:12px;margin-left:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:middle;animation:pull-pending 700ms linear infinite}
+.operation-status{padding:14px 18px;margin-bottom:18px;border:1px solid #dce3f3;border-radius:12px;background:#f2f5fc;color:var(--ink);font-size:.84rem;line-height:1.6}
+.operation-status[hidden]{display:none}
+@keyframes pull-pending{to{transform:rotate(360deg)}}
+@supports(interpolate-size:allow-keywords){
+ details{interpolate-size:allow-keywords}
+ details::details-content{block-size:0;overflow:clip;opacity:0;transition:block-size 220ms var(--ease-enter),opacity 160ms var(--ease-standard),content-visibility 220ms allow-discrete}
+ details[open]::details-content{block-size:auto;opacity:1}
+}
+@media(prefers-reduced-motion:reduce){
+ :where(.home-purpose-change,.global-search,.client-choice,.person-name,.overview-row,.inbox-lane,.section-tab,summary){transition:none!important;transform:none!important}
+ button[aria-busy=true]::after{animation:none;border-right-color:currentColor;opacity:.6}
+ details::details-content{transition:none!important}
+}
+.platform-catalog{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding:24px}
+.platform-catalog>article{min-width:0;padding:22px;border:1px solid var(--line);border-radius:14px;background:#fafbfe}
+.platform-catalog>article>span{display:block;margin-bottom:11px;font-size:.66rem;font-weight:600;color:#6a7b96;letter-spacing:.04em}
+.platform-catalog h3{font-size:1rem;line-height:1.35;margin-bottom:10px}
+.platform-catalog p{font-size:.82rem;line-height:1.7;color:var(--muted)}
+.platform-catalog small{display:block;margin-top:15px;padding-top:13px;border-top:1px solid var(--line);font-size:.74rem;line-height:1.7;color:var(--muted)}
+.operation-status::before{content:"";display:inline-block;width:12px;height:12px;margin-right:10px;border:2px solid #abb8db;border-right-color:var(--blue);border-radius:50%;vertical-align:middle;animation:pull-pending 700ms linear infinite}
+.automation-schedules>.small-print{padding:0 24px 24px}
+@media(max-width:767px){.platform-catalog{grid-template-columns:minmax(0,1fr);padding:20px;gap:12px}.platform-catalog>article{padding:20px}}
+@media(prefers-reduced-motion:reduce){.operation-status::before{animation:none}}
