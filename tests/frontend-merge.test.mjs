@@ -6,6 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {webcrypto} from 'node:crypto';
 import * as engine from '../dist/engine.js';
 import {contactOptions,displayIdentity,validContactUrl} from '../dist/contact.js';
 import {samples} from '../dist/sample.js';
@@ -27,7 +28,7 @@ async function workspace(initialHash='') {
   };
   const document={body:{dataset:{}},querySelector:element,querySelectorAll:()=>[],addEventListener(name,fn){events.set(name,[...(events.get(name)||[]),fn]);}};
   const location={hash:initialHash,protocol:'https:',pathname:'/',search:''};
-  const context={renderAuthWorkspace,renderDraftWorkspace,draftChannels,createContextualWorkspace,renderOpportunityWorkspace,...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
+  const context={renderAuthWorkspace,renderDraftWorkspace,draftChannels,createContextualWorkspace,renderOpportunityWorkspace,...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,crypto:webcrypto,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
   vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,loadAutomations,askAI,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData,onboardingDrafts}),update:changes=>{if(changes.onboardingDrafts)onboardingDrafts=changes.onboardingDrafts;if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
   return {app:context.testApp,element,location,calls,respond:fn=>{context.cloudRequest=fn;},hash:()=>windowEvents.get('hashchange')(),click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
@@ -293,4 +294,18 @@ test('late workflow refreshes cannot replace newer data or another account works
  const previous=app.loadAutomations();app.setCloudUser({id:'different-owner'});
  pending[2]({workflows:[{id:'private-old-account'}]});await previous;
  assert.equal(app.get().automationData.workflows.length,0);
+});
+
+
+test('Research retries preserve the question and request ID, and account changes discard both',async()=>{
+  const w=await workspace('#assistant');w.app.setCloudUser({id:'first-owner'});
+  const sent=[];w.respond(async(path,body)=>{if(path==='ai'){sent.push(structuredClone(body));throw new Error('connection lost');}return {};});
+  await w.app.askAI('Find website buyers in Abuja');
+  w.app.update({state:{offer:'changed after the request'}});w.app.get().state.rules.roles='edited after request';
+  await w.app.askAI('Find website buyers in Abuja',true);
+  assert.deepEqual(sent[0],sent[1]);assert.match(sent[0].researchRequestId,/^[0-9a-f-]{36}$/);
+  w.app.get().assistantState.shareContext=false;w.app.get().assistantState.allowResearch=false;
+  await w.app.askAI('Find website buyers in Abuja',true);assert.equal(sent[2].useWorkspace,false);assert.equal(sent[2].allowResearch,false);assert.equal(Object.keys(sent[2].context).length,0);
+  await w.app.askAI('Find a different product in Lagos');assert.notEqual(sent[0].researchRequestId,sent[3].researchRequestId);
+  w.app.setCloudUser({id:'second-owner'});assert.equal(w.app.get().assistantState.researchRequestId,null);assert.equal(w.app.get().assistantState.researchRequest,null);
 });

@@ -1,4 +1,7 @@
+import { v2Boundary } from './v2-boundary.js';
+
 export function configuration(env) {
+  if (!v2Boundary(env).ok) return null;
   try {
     const url = new URL(env.SUPABASE_URL);
     const key = env.SUPABASE_PUBLISHABLE_KEY || '';

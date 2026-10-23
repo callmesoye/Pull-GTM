@@ -127,14 +127,16 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
         catch(error){return reply(503,{error:error.message});}
       }
       if(resource==='ai'){
-        if(body.action!=='probe'){try{prepareAI(body);}catch(e){return reply(400,{error:e.message});}}
+        let prepared;
+        if(body.action!=='probe'){try{prepared=prepareAI(body);}catch(e){return reply(400,{error:e.message});}}
         if(!aiConfiguration(env).credential)return reply(503,{error:'AI Gateway needs configuration before a model can respond.'});
         const allowed=await client(access).rpc('claim_pull_ai_request',{});
         if(allowed.error)return reply(503,{error:'AI usage controls are unavailable. Your workspace is kept.'});
         if(allowed.data!==true)return reply(429,{error:'The daily AI usage budget is reached. Your prospect list and manual tools remain available.'});
         if(body.action==='probe'){const {status,...data}=await probeAI({env,transport});return reply(status,data);}
-        const tools=createIntelligenceTools({db:client(access),ownerId:user.id,env,transport,useWorkspace:body.useWorkspace===true,allowResearch:body.allowResearch===true,now});
-        const result=await generateReply({body,userId:user.id,env,transport,tools});const {status,...data}=result;return reply(status,data);
+        const tools=createIntelligenceTools({db:client(access),ownerId:user.id,env,transport,useWorkspace:body.useWorkspace===true,allowResearch:body.allowResearch===true,requestKey:body.researchRequestId,goalFingerprint:JSON.stringify({message:prepared.message,context:prepared.context}),now});
+        const result=await generateReply({body,userId:user.id,env,transport,tools});try{await tools.finalizeBuyerResearch();}catch{result.researchPersistence='unavailable';if(result.reply)result.reply+='\n\nSome research progress could not be saved. The source cards in this response are still available.';}
+        const {status,...data}=result;return reply(status,data);
       }
       if(resource==='agents'){
         const endpoint=config.url+'/functions/v1/pull-mcp';

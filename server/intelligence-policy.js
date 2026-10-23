@@ -1,11 +1,11 @@
 // Pull controls evidence and permissions; the model supplies reasoning and language.
 const safeURL=value=>{try{const u=new URL(value);return ['https:','http:'].includes(u.protocol)&&!u.username&&!u.password?u.href:null;}catch{return null;}};
 export function evidenceLedger(context,research=[]){
-  const records=[...(context.reviewed||[]),...research.flatMap(r=>r.people||[])];
+  const records=[...(context.reviewed||[]),...research.flatMap(r=>[...(r.people||[]),...(r.type==='buyer_research'?r.opportunities||[]:[])])];
   const seen=new Set(),evidence=[];
   for(const record of records){
     const url=safeURL(record.source_url);if(!url||seen.has(url))continue;
-    seen.add(url);evidence.push({id:'E'+(evidence.length+1),url,name:record.name||record.company||'',status:'source-asserted',excerpt:typeof record.source_excerpt==='string'?record.source_excerpt.slice(0,1200):''});
+    seen.add(url);evidence.push({id:'E'+(evidence.length+1),url,name:record.name||record.company||record.title||'',status:'source-asserted',excerpt:typeof record.source_excerpt==='string'?record.source_excerpt.slice(0,1200):''});
     if(evidence.length===58)break;
   }
   return evidence;

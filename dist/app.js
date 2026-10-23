@@ -381,7 +381,7 @@ document.addEventListener('submit',async e=>{
 const assistantPrompts=[['Refine my audience','Help me refine my ideal customer. Ask only the questions that affect relevance, explain any suggested changes, and preserve my chosen geographic scope.','prospects'],['Review the gaps','Look at my reviewed prospect context and explain what evidence is missing. Separate supplied facts from assumptions. Do not invent contacts or buying intent.','shield'],['Keep it in my voice','Help me write a first message in my own voice. Ask for my tone and a draft if needed, use only supplied facts, and avoid unsupported results or promises.','drafts'],['Plan an automation','List my enabled Pull workflows and help choose one for this task. If suitable, use propose_workflow with this claimed question and the current saved revision. Explain what it will do and wait for my approval in Pull. Never send messages.','automations']];
 function syncSections(){const group=['prospects','shortlist'].includes(view)?'buyers':['drafts','inbox'].includes(view)?'engage':view==='assistant'?'assistant':null;document.querySelectorAll('[data-nav-group]').forEach(button=>{const active=button.dataset.navGroup===group;button.classList.toggle('active',active);button.setAttribute('aria-current',active?'page':'false');});const tabs=$('#section-tabs');const items=group==='buyers'?[['prospects','Find buyers'],['shortlist','Shortlist'+(state.shortlist.length?' · '+state.shortlist.length:'')]]:group==='engage'?[['drafts','Outreach'],['inbox','Conversations']]:[];tabs.hidden=!items.length;tabs.innerHTML=items.map(([v,l])=>`<button class="section-tab ${v===view?'active':''}" data-view="${v}" aria-current="${v===view?'page':'false'}">${escape(l)}</button>`).join('');$('#shortlist-count').hidden=state.shortlist.length===0;}
 function syncModes(){const active=view==='assistant';if(!active)focusView=view;document.body.dataset.workspaceMode=active?'ai':'focus';$('#focus-mode')?.setAttribute('aria-pressed',String(!active));$('#ai-mode')?.setAttribute('aria-pressed',String(active));}
-function syncAssistantAccount(){const id=cloud.user?.id||null;if(assistantState.userId!==id){assistantState={...assistantState,userId:id,messages:[],agentMessages:[],mode:'pull',busy:false,error:'',draft:'',lastMessage:''};agentState={configured:null,endpoint:null,tokens:[],busy:false,error:'',oneTime:null,userId:id};if(view==='assistant')paintAI();}}
+function syncAssistantAccount(){const id=cloud.user?.id||null;if(assistantState.userId!==id){assistantState={...assistantState,userId:id,messages:[],agentMessages:[],mode:'pull',busy:false,error:'',draft:'',lastMessage:'',researchRequestId:null,researchRequest:null};agentState={configured:null,endpoint:null,tokens:[],busy:false,error:'',oneTime:null,userId:id};if(view==='assistant')paintAI();}}
 function aiContext(){return assistantState.shareContext?{identity:state.identity,offer:state.offer,context:state.context,rules:state.rules,reviewed:evaluated().filter(p=>state.shortlist.includes(p.id)).slice(0,8).map(p=>({name:p.name,title:p.title,company:p.company,industry:p.industry,country:p.country,signal:p.signal,signal_date:p.signal_date,source_url:p.source_url,origin:p.origin,status:p.status})),voice:'Ask for my preferred voice when it is not supplied.'}:{identity:'',offer:'',context:'personal',rules:{},reviewed:[]};}
 function aiView(){return renderAgentAIView({cloud,agentState,state,assistantState,items:evaluated(),escape,icon:uiIcon});}
 let lastAITranscript='';
@@ -428,10 +428,11 @@ async function refreshAIStatus(){
  catch(error){if(!accountGuard.current(ticket))return;agentState.error=error.message;}
  finally{if(accountGuard.sameAccount(ticket)){agentState.busy=false;paintAI();await refreshAgentChat();scheduleAgentChat();}}
 }
-async function askAI(message){
+async function askAI(message,retry=false){
  const question=message.trim();if(!question||assistantState.busy)return;
  if(!cloud.user||!cloud.verified){assistantState.error='Sign in to chat with Pull. Your question stays here.';assistantState.draft=question;paintAI();return;}
  const ticket=accountGuard.ticket(),mode=assistantState.mode;let replyArrived=false;
+ if(!retry||!assistantState.researchRequestId){assistantState.researchRequestId=crypto.randomUUID();assistantState.researchRequest=null;}
  assistantState.busy=true;assistantState.error='';assistantState.lastMessage=question;paintAI();
  try{
   if(mode==='agent'){
@@ -440,7 +441,9 @@ async function askAI(message){
    if(!accountGuard.current(ticket))return;assistantState.draft='';await refreshAgentChat();
   }else{
    const history=assistantState.messages.slice(-8).map(m=>({role:m.role,content:m.content}));
-   const result=await cloudRequest('ai',{message:question,context:aiContext(),history,useWorkspace:assistantState.shareContext,allowResearch:assistantState.allowResearch},ticket.id);
+   const requestBody=assistantState.researchRequest||structuredClone({researchRequestId:assistantState.researchRequestId,message:question,context:aiContext(),history,useWorkspace:assistantState.shareContext,allowResearch:assistantState.allowResearch});
+   assistantState.researchRequest=requestBody;
+   const result=await cloudRequest('ai',{...requestBody,context:assistantState.shareContext?requestBody.context:{},useWorkspace:assistantState.shareContext,allowResearch:assistantState.allowResearch},ticket.id);
    if(!accountGuard.current(ticket))return;
    assistantState.messages.push({role:'user',content:question,created_at:new Date().toISOString()},{role:'assistant',content:result.reply,research:result.research||[],actions:result.actions||[],created_at:new Date().toISOString()});
    assistantState.draft='';replyArrived=true;
@@ -477,7 +480,7 @@ document.addEventListener('click',async e=>{
  if(action==='focus-mode')navigate(focusView==='assistant'?'home':focusView);
  if(action==='ai-refresh')await refreshAIStatus();
  if(action==='ai-copy-relay'){try{await navigator.clipboard.writeText('Start a Pull conversation relay. Call get_pull_question for my questions, answer each one with answer_pull_question, and keep checking while this session is open. Use my voice and preferences you already know when relevant. Respect each question’s useWorkspace choice; do not disclose private memory unless I ask. When I ask to run an automation and useWorkspace is true, list_workflows and propose_workflow with the claimed question ID and current saved revision. Only I approve execution inside Pull. Keep sourced facts separate from assumptions, and tell me when you stop.');toast('Startup instruction copied. Paste it into your connected agent.');}catch{toast('Copy is unavailable. Ask your connected agent to start the Pull conversation relay.');}}
- if(action==='ai-clear'){if(assistantState.busy)return;assistantState.messages=[];assistantState.error='';assistantState.draft='';assistantState.lastMessage='';paintAI();}
+ if(action==='ai-clear'){if(assistantState.busy)return;assistantState.messages=[];assistantState.error='';assistantState.draft='';assistantState.lastMessage='';assistantState.researchRequestId=null;assistantState.researchRequest=null;paintAI();}
  if(action==='ai-probe'){if(assistantState.busy)return;const ticket=accountGuard.ticket();assistantState.busy=true;try{b.disabled=true;const r=await cloudRequest('ai',{action:'probe'},ticket.id);if(accountGuard.current(ticket))modal('AI connection check',`<p>${escape(r.reply)}</p><p>${escape(r.notice)}</p>`);}catch(error){if(accountGuard.current(ticket)){assistantState.error=error.message;paintAI();}}finally{if(accountGuard.sameAccount(ticket))assistantState.busy=false;b.disabled=false;}return;}
  if(action==='ai-retry')await askAI(assistantState.lastMessage,true);
  if(b.dataset.aiPrompt!==undefined){assistantState.draft=assistantPrompts[Number(b.dataset.aiPrompt)]?.[1]||'';paintAI();$('#ai-message')?.focus();}

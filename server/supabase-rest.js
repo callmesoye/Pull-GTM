@@ -2,12 +2,12 @@
 export function createClient(url,key,options={}) {
   const transport=options.global?.fetch||fetch;
   let session=null;
-  async function request(path,{method='GET',body,token,prefer}={}) {
+  async function request(path,{method='GET',body,token,prefer,signal}={}) {
     const headers={apikey:key,...options.global?.headers};
     if(token)headers.Authorization='Bearer '+token;
     if(body!==undefined)headers['Content-Type']='application/json';
     if(prefer)headers.Prefer=prefer;
-    const response=await transport(url+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body)});
+    const response=await transport(url+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body),...(signal?{signal}:{})});
     const text=await response.text();
     let data;try{data=text?JSON.parse(text):{};}catch{return {data:null,error:{status:502}};}
     return response.ok?{data,error:null}:{data:null,error:{status:response.status,code:data.code||data.error_code}};
@@ -15,7 +15,7 @@ export function createClient(url,key,options={}) {
   const authResult=result=>result.error?{data:{user:null,session:null},error:result.error}:{data:{user:result.data.user||result.data,session:result.data.access_token?result.data:null},error:null};
   const redirectQuery=value=>value?'?'+new URLSearchParams({redirect_to:value}):'';
   return {
-    rpc:(name,body)=>request('/rest/v1/rpc/'+encodeURIComponent(name),{method:'POST',body}),
+    rpc:(name,body,{signal}={})=>request('/rest/v1/rpc/'+encodeURIComponent(name),{method:'POST',body,signal}),
     auth:{
       getUser:async token=>{const r=await request('/auth/v1/user',{token});return {data:{user:r.data},error:r.error};},
       refreshSession:async body=>authResult(await request('/auth/v1/token?grant_type=refresh_token',{method:'POST',body})),

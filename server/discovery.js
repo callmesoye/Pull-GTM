@@ -2,6 +2,10 @@ import {personFromSource,parseSourceIdentity} from './person-evidence.js';
 import {canonicalProfile} from '../dist/prospect-records.js';
 import {assessPrivateSector} from '../dist/prospect-policy.js';
 
+// A source page is not a qualified person. Product-led investigations reuse
+// the same URL/sector exclusions without weakening named-person validation.
+export {safeSourcePage as researchSourcePage};
+
 const blockHost=/(^|\.)(gov|gouv|gc|go|edu|ac|mil)\.[a-z.]+$/i;
 const blockWords=/\b(government|ministry|public university|state university|federal university|public school|public institution|state-owned|government-owned|civil service|regulator|commission|registry|parliament|municipal|council|national assembly)\b/i;
 const privateEvidence=/\b(privately[- ]owned|private[- ]sector|private (business|company|companies|school|schools|clinic|hospital|practice|car dealership|dealership|agency)|independent (business|professional|consultant|trader)|self[- ]employed|sole proprietor)\b/i;

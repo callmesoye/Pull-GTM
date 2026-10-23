@@ -581,10 +581,14 @@ test('each actual request claims one budget unit and a later denial preserves pa
   assert.equal(denied.requestsUsed,0);assert.equal(denied.target.reason,'daily_budget_reached');
 });
 
-test('search stops at its total time bound and preserves already found people',async()=>{
-  let calls=0;
+test('search stops at its total time bound and preserves already found people',async t=>{
+  let calls=0,clock=0;
+  // Source parsing can legitimately consume the original 10 ms fixture under
+  // concurrent test load. Control the clock, not the production deadline.
+  t.mock.method(Date,'now',()=>clock);
   const result=await discoverPrivatePages(goalInput(),{key:'fixture',provider:'serper',maxQueries:8,maxDurationMs:10,transport:async(url,options)=>{
     if(++calls===1)return Response.json({organic:[goalRow(0)]});
+    clock=11;
     return await new Promise((resolve,reject)=>{options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true});setTimeout(()=>resolve(Response.json({organic:[]})),30);});
   }});
   assert.equal(result.returned,1);assert.equal(result.target.reason,'time_budget_reached');
