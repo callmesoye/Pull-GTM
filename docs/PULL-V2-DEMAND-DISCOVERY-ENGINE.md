@@ -1,6 +1,6 @@
 # Pull V2: product-to-demand discovery engine
 
-23 October 2026. Proposed backend design on the isolated V2 branch. **Pull has no ready buyer database, no live product-photo intake, no original-page verifier, and no outcome-trained ranker.** The current implementation has a bounded search/journal that returns possible requests, buying routes and market context from search excerpts. This document specifies how to extend it. It makes no guarantee of buyers or sales.
+23 October 2026. Proposed backend design on the isolated V2 branch. **Pull has no ready buyer database, no live product-photo intake, no semantic buyer-request verifier, and no outcome-trained ranker.** Saved-offer binding and bounded original-page observations are now locally implemented; see `PULL-V2-OFFER-FLOW-STATUS.md` for enablement and verification limits. The current implementation has a bounded search/journal that returns possible requests, buying routes and market context from search excerpts. This document specifies how to extend it. It makes no guarantee of buyers or sales.
 
 The staged engineering handoff, including the first implemented server contracts and evaluation method, is in [PULL-V2-CODEX-IMPLEMENTATION-BRIEF.md](PULL-V2-CODEX-IMPLEMENTATION-BRIEF.md).
 

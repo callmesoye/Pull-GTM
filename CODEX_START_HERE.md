@@ -1,6 +1,6 @@
 # Pull GTM V2 — Codex continuation
 
-Handoff date: 23 October 2026. Repository: `callmesoye/Pull-GTM`. Branch: `v2/product-led-intelligence`. Open this branch in Codex and read this file first. Do not assume the original ChatGPT filesystem path exists on the Mac or in Codex cloud.
+Handoff date: 23 October 2026. Latest implementation checkpoint: `docs/PULL-V2-OFFER-FLOW-STATUS.md`. Repository: `callmesoye/Pull-GTM`. Branch: `v2/product-led-intelligence`. Open this branch in Codex and read this file first. Do not assume the original ChatGPT filesystem path exists on the Mac or in Codex cloud.
 
 ## Preserve the working product
 
@@ -16,11 +16,11 @@ Pull helps a seller find relevant buyers for a specific offer, including difficu
 
 - Existing AI backend, authentication, research and platform policy boundaries remain the source of truth.
 - Bounded buyer research: up to four hypotheses/eight source reservations, supported search providers, durable journal/recovery contracts and evidence tiers.
-- Offer confirmation and research-plan binding contracts in `server/v2-handoff.js` and `server/intelligence.js`.
+- Saved offer API, immutable version storage preparation, seller confirmation form and actual backend research binding. Optional bounded checks of approved original pages. See `docs/PULL-V2-OFFER-FLOW-STATUS.md` for enablement and limits.
 - Permissioned CRM integration handoff contract in `server/integration-handoff.js`.
 - Opportunity precision and offer-level buyer finding evaluation in `server/v2-evaluation.js`, using synthetic tests only. No real buyer finding rate has been measured.
 - V2 isolation guard and SQL preparation. Preparation does not mean SQL is deployed.
-- Not yet implemented end to end: private image intake/vision, a guarded original-page verifier, an opt-in buyer pool, lead campaign integration, and a production outcome-learning worker.
+- Not yet implemented end to end: private image intake/vision, semantic original-request/buyer verification, an opt-in buyer pool, lead campaign integration, and a production outcome-learning worker. Opening an original page is implemented but is not buyer verification.
 - There is no evidence of either 70% or 98% live buyer finding performance. 98% is an aspiration; precision of cards is a different metric from offers receiving buyers or sales.
 
 ## Read in this order
@@ -33,9 +33,9 @@ Pull helps a seller find relevant buyers for a specific offer, including difficu
 
 ## Continue with implementation
 
-First inspect applicable AGENTS.md, git status, actual source and tests. Run `npm ci`, `npm run check`, and `npm test` in a clean checkout. The latest local suite passed **431 tests** and syntax checks. That is local verification, not GitHub Actions or a live integration result.
+First inspect applicable AGENTS.md, git status, actual source and tests. Run `npm ci`, `npm run check`, and `npm test` in a clean checkout. The latest local suite passed **447 tests** and syntax checks. That is local verification, not GitHub Actions or a live integration result.
 
-Next complete the first vertical slice: confirmed text offer → bounded diverse search → permitted original-source verification → deduplicated buyer request / buying route / explicit no result → seller review. Cars in Lagos/Abuja are one pilot; include service and wholesale fixtures so the abstraction is not car-only. Implement in small tested commits. Preserve identity validation, source rights, government/public-institution exclusions, owner isolation, journal reservations, cost caps and explicit send approvals. Do not lower qualification just to increase the count.
+Next extend the implemented saved text offer → bounded search → original-page observation flow with source-specific semantic verification, persistent reviewer qualification and real outcomes. Cars in Lagos/Abuja are one pilot; include service and wholesale fixtures so the abstraction is not car-only. Implement in small tested commits. Preserve identity validation, source rights, government/public-institution exclusions, owner isolation, journal reservations, cost caps and explicit send approvals. Do not lower qualification just to increase the count.
 
 The subsequent slices are consented buyer request intake, seller-approved demand capture, qualification, outcome recording and controlled evaluation. Never fabricate a buyer, use directory presence as purchase intent, infer personal wealth from lifestyle, or count snippets as verified demand. Use seller-approved activation when public requests are scarce. Research, messages, ad spending and transactions have separate authority and evidence requirements.
 

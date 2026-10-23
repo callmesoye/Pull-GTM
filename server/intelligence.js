@@ -5,6 +5,7 @@ import {randomUUID} from 'node:crypto';
 import {createResearchJournal} from './research-journal.js';
 import {buyerResearchInput,discoverBuyerRoutes,mergeBuyerResearch} from './buyer-research.js';
 import {bindResearchPlan} from './v2-handoff.js';
+import {approvedSourceHosts,checkBuyerSource,readApprovedPage} from './source-check.js';
 
 const schema=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const string={type:'string'};
@@ -17,9 +18,23 @@ export const intelligenceToolDefinitions={
 
 intelligenceToolDefinitions.refine_buyer_routes={type:'function',function:{name:'refine_buyer_routes',description:'Run one evidence-informed second pass after discover_buyer_routes. Use findings from the first pass to propose different buyers, buying routes or vocabulary. State which observed evidence or unresolved gap justifies each proposed route in reason; all proposals remain hypotheses. Product, exact terms, location, result limit and total source allowance are fixed by the original investigation. No repeated queries, contact, personal wealth inference or new product assumptions. Results replace the first source card batch with a consolidated batch.',strict:true,parameters:schema({hypotheses:intelligenceToolDefinitions.discover_buyer_routes.function.parameters.properties.hypotheses})}};
 
-export function createIntelligenceTools({db,ownerId,env,transport,useWorkspace=false,allowResearch=false,requestKey,goalFingerprint,confirmedOffer,now=()=>new Date()}) {
+export function createIntelligenceTools({db,ownerId,env,transport,useWorkspace=false,allowResearch=false,requestKey,goalFingerprint,confirmedOffer,sourceReader=readApprovedPage,now=()=>new Date()}) {
   const tools={};
   let buyerSession=null,journal=null;
+  const checkedSources=new Map();
+  const checkSources=async result=>{
+    if(!confirmedOffer)return;
+    result.offerReference={id:confirmedOffer.id,version:confirmedOffer.version};
+    if(env.PULL_SOURCE_CHECK_ENABLED!=='true')return;
+    let hosts;try{hosts=approvedSourceHosts(env.PULL_SOURCE_CHECK_HOSTS||'');}catch{result.sourceChecks={status:'configuration_unavailable',attempted:0,opened:0,max:2};return;}
+    for(const item of result.opportunities){
+      let host;try{host=new URL(item.source_url).hostname;}catch{continue;}
+      if(!hosts.includes(host)){item.sourceCheck={state:'not_approved',originalChecked:false};continue;}
+      if(!checkedSources.has(item.source_url)&&checkedSources.size<2)checkedSources.set(item.source_url,await checkBuyerSource(item,confirmedOffer,{hosts,reader:sourceReader,now}));
+      item.sourceCheck=checkedSources.get(item.source_url)||{state:'check_limit_reached',originalChecked:false};
+    }
+    result.sourceChecks={status:'bounded_pass_finished',attempted:checkedSources.size,opened:[...checkedSources.values()].filter(x=>x.originalChecked).length,unchecked:result.opportunities.filter(item=>!item.sourceCheck?.originalChecked).length,max:2};
+  };
   const hooks=()=>journal?{beforeRequest:step=>journal.reserve(step),afterRequest:(step,response)=>journal.record(step,response)}:{beforeRequest:async()=>{
     const claim=await db.rpc('claim_pull_search_requests',{p_requests:1});
     if(claim.error)throw new Error('Source budget verification is unavailable.');
@@ -61,6 +76,7 @@ export function createIntelligenceTools({db,ownerId,env,transport,useWorkspace=f
     if(journal)result.requestsUsed=journal.state.requestsUsed;
     const stopped=['key_rejected','credits_exhausted','rate_limited','source_budget_reached','budget_unavailable','persistence_unavailable'].includes(result.coverage.stopReason);
     buyerSession.result=Object.assign(result,{run_id:id,remainingSourceRequests:stopped?0:cap-result.requestsUsed});
+    await checkSources(buyerSession.result);
     await checkpoint();
     return buyerSession.result;
   };
@@ -79,7 +95,7 @@ export function createIntelligenceTools({db,ownerId,env,transport,useWorkspace=f
     const result={...merged,run_id:buyerSession.id,remainingSourceRequests:0,refinement:'completed'};
     Object.defineProperty(result,'sourceKeys',{value:merged.sourceKeys||[...new Set([...(previous.sourceKeys||[]),...(next.sourceKeys||[])])]});
     if(journal)result.requestsUsed=journal.state.requestsUsed;
-    buyerSession.result=result;await checkpoint();return result;
+    buyerSession.result=result;await checkSources(result);await checkpoint();return result;
   };
   if(allowResearch)tools.search_prospects=async args=>{
     const input=discoveryInput(args),search=searchConfiguration(env);
@@ -112,7 +128,7 @@ export function createIntelligenceTools({db,ownerId,env,transport,useWorkspace=f
 }
 
 export function modelToolResult(result){
-  if(result?.type==='buyer_research')return {type:result.type,run_id:result.run_id,input:result.input,provider:result.provider,requestsUsed:result.requestsUsed,opportunities:result.opportunities,summary:result.summary,coverage:result.coverage,trace:result.trace,notice:result.notice,remainingSourceRequests:result.remainingSourceRequests,refinement:result.refinement};
+  if(result?.type==='buyer_research')return {type:result.type,run_id:result.run_id,input:result.input,offerReference:result.offerReference,sourceChecks:result.sourceChecks,provider:result.provider,requestsUsed:result.requestsUsed,opportunities:result.opportunities,summary:result.summary,coverage:result.coverage,trace:result.trace,notice:result.notice,remainingSourceRequests:result.remainingSourceRequests,refinement:result.refinement};
   if(result?.type!=='research')return result;
   return {type:'research',input:result.input,provider:result.provider,requestsUsed:result.requestsUsed,target:result.target,notice:result.notice,diagnostics:result.diagnostics,people:(result.people||[]).slice(0,50).map(p=>({name:p.name,title:p.title,company:p.company,industry:p.industry,location:p.location,source_url:p.source_url,source_excerpt:p.source_excerpt,supporting_sources:p.supporting_sources}))};
 }

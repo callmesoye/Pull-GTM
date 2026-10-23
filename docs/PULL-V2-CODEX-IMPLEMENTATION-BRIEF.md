@@ -2,6 +2,8 @@
 
 Paste the section below into a Codex development session with access to the V2 checkout. This Work Mode checkout is not automatically present on a separate Mac or Codex installation; if the checkout is absent, locate the actual repository and verify the branch and commit before editing. It is an execution brief, not a claim that later phases are complete. Date: 23 October 2026.
 
+Current implementation update: read [PULL-V2-OFFER-FLOW-STATUS.md](PULL-V2-OFFER-FLOW-STATUS.md) before treating any phase below as unimplemented.
+
 ---
 
 You are the senior backend and product engineer for Pull GTM V2. Continue from the Pull GTM V2 checkout, branch `v2/product-led-intelligence`. In this Work Mode environment the path is `/workspace/scratch/b02dcc8f71ad/pull-gtm-v2`; on another computer, locate the corresponding checkout first. Inspect actual `git status`, commit history, applicable `AGENTS.md`, current code and tests before editing. Preserve the separate V1 worktree. Do not deploy, touch V1 credentials, migrate a live database or send external messages during this implementation. The latest contract slice is `server/v2-handoff.js`, covered by `tests/v2-handoff.test.mjs`; understand and extend it instead of replacing it. Read `docs/RESEARCH-BACKEND-ARCHITECTURE.md`, `docs/PULL-V2-DEMAND-DISCOVERY-ENGINE.md`, `docs/PULL-V2-IMAGE-TO-BUYER-RESEARCH.md`, `docs/PULL-V2-BUYER-SYSTEMS.md` and `docs/JIJI-INTEGRATION.md`.
