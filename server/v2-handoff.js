@@ -9,7 +9,7 @@ const clean=(value,max,label)=>{
   return result;
 };
 const optional=(value,max,label)=>value===undefined||value===null||value===''?null:clean(value,max,label);
-const fields=new Set(['product','location','price','condition','quantity','delivery','model','year','variant','material','capacity','service_scope']);
+const fields=new Set(['product','location','price','condition','quantity','delivery','model','year','variant','material','capacity','service_scope','category']);
 const words=value=>value.toLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
 const containsPhrase=(text,phrase)=>(' '+words(text).join(' ')+' ').includes(' '+words(phrase).join(' ')+' ');
 const claimsFor=(values,origin,sourceRef)=>Object.entries(values).filter(([,value])=>value!==null).map(([field,value])=>({field,value,origin,sourceRef}));
@@ -17,6 +17,7 @@ const normalizedFields=(input,{required=false}={})=>{
   if(!object(input)||Object.keys(input).some(field=>!fields.has(field)))throw new Error('Unknown offer field.');
   const values={};
   for(const [field,value] of Object.entries(input))values[field]=optional(value,field==='product'?500:field==='location'?120:250,field);
+  if(values.category&&!['goods','service','wholesale'].includes(values.category))throw new Error('Choose product, service or wholesale.');
   if(required&&(!values.product||!values.location))throw new Error('Confirm a product and location before research.');
   return values;
 };

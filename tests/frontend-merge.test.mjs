@@ -1,3 +1,4 @@
+import {createBuyerRequestsWorkspace} from '../dist/buyer-requests-workspace.js';
 import {renderBuyerReview,buyerReviewQuestions} from '../dist/buyer-review-ui.js';
 import {renderOfferPanel} from '../dist/offers-ui.js';
 import {renderAuthWorkspace} from '../dist/auth-workspace.js';
@@ -30,7 +31,7 @@ async function workspace(initialHash='') {
   };
   const document={body:{dataset:{}},querySelector:element,querySelectorAll:()=>[],addEventListener(name,fn){events.set(name,[...(events.get(name)||[]),fn]);}};
   const location={hash:initialHash,protocol:'https:',pathname:'/',search:''};
-  const context={renderBuyerReview,buyerReviewQuestions,renderOfferPanel,renderAuthWorkspace,renderDraftWorkspace,draftChannels,createContextualWorkspace,renderOpportunityWorkspace,...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,crypto:webcrypto,URL,URLSearchParams,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
+  const context={createBuyerRequestsWorkspace,renderBuyerReview,buyerReviewQuestions,renderOfferPanel,renderAuthWorkspace,renderDraftWorkspace,draftChannels,createContextualWorkspace,renderOpportunityWorkspace,...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,crypto:webcrypto,URL,URLSearchParams,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
   vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,loadAutomations,askAI,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData,onboardingDrafts,offerState,buyerReviewState}),update:changes=>{if(changes.onboardingDrafts)onboardingDrafts=changes.onboardingDrafts;if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
   return {app:context.testApp,element,location,calls,respond:fn=>{context.cloudRequest=fn;},hash:()=>windowEvents.get('hashchange')(),input:async(id,name,value,type='input')=>{for(const callback of events.get(type)||[])await callback({target:{dataset:{},name,value,closest:()=>({id})}});},submit:async(id,values)=>{context.FormData=class{constructor(){}get(key){return values[key]??null;}};const event={target:{id},preventDefault(){}};for(const callback of events.get('submit'))await callback(event);},click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
@@ -111,6 +112,31 @@ test('A saved product starts research with its server reference and account chan
   f.app.setCloudUser({id:'seller-B'});
   assert.equal(f.app.get().assistantState.selectedOffer,null);
   assert.equal(f.app.get().offerState.offers.length,0);
+});
+
+test('The main app connects private buyer intake and saved-offer request matching without requiring chat',async()=>{
+  const f=await workspace(),offer={id:'3c241189-65ed-4ae6-945e-9bd606e18718',version:1,fields:{product:'C300',location:'Lagos'}};
+  const posts=[];
+  f.respond(async(path,body)=>{
+    if(path==='offers?status=1')return {enabled:true,requestsEnabled:true};
+    if(path==='offers')return {offers:[offer]};
+    if(path==='buyer-requests'){
+      if(!body)return {requests:[]};
+      posts.push(body);
+      if(body.action==='save')return {request:{id:body.requestId,revision:1,payload:body.payload,expires_at:'2026-11-01'}};
+      return {matches:[],notice:'No independently verified buyers.'};
+    }
+    return {};
+  });
+  f.app.setCloudUser({id:'buyer-A'});f.app.navigate('prospects');await new Promise(resolve=>setImmediate(resolve));
+  assert.match(f.element('#view-content').innerHTML,/Check buying requests/);
+  await f.click({buyerRequests:''});assert.match(f.element('#dialog-content').innerHTML,/What do you want to buy/);
+  await f.submit('buyer-request-form',{product:'C300',location:'Lagos',category:'goods',budgetMax:'',validForDays:'7',status:'open'});
+  assert.equal(posts[0].payload.discoverable,false);assert.equal(posts[0].payload.contactAllowed,false);
+  assert.match(f.element('#dialog-content').innerHTML,/was saved/);
+  await f.click({offerRequests:offer.id});assert.equal(posts[1].offerId,offer.id);assert.equal(posts[1].offerVersion,1);
+  assert.equal(f.app.get().view,'prospects');assert.equal(f.app.get().assistantState.messages.length,0);
+  assert.match(f.element('#dialog-content').innerHTML,/No shared requests matched/);
 });
 
 test('Late product responses cannot appear in a different account',async()=>{

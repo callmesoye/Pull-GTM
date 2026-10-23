@@ -6,6 +6,7 @@ import {testAgentConnection} from './agent-test.js';
 import {createIntelligenceTools} from './intelligence.js';
 import {offersRequest,offerReference,loadConfirmedOffer} from './offers.js';
 import {buyerReviewsRequest} from './buyer-reviews.js';
+import {buyerRequestsRequest,buyerRequestEnabled} from './buyer-requests.js';
 
 const MAX_BYTES = 3 * 1024 * 1024;
 import {validateWorkspace} from '../dist/workspace.js';
@@ -55,7 +56,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
     if (request.method==='POST' && (request.headers.get('origin')!==url.origin || request.headers.get('sec-fetch-site')==='cross-site')) return reply(403,{error:'Open Pull GTM directly to continue.'});
     if(resource==='ai'&&request.method==='GET'){const ai=aiConfiguration(env);return reply(200,{configured:Boolean(config&&ai.credential),model:ai.model,requiresSignIn:true});}
     if(resource==='discovery'&&request.method==='GET'){const search=searchConfiguration(env);return reply(200,{configured:Boolean(config&&search),provider:search?.provider||null,maxQueries:search?.maxQueries||null,requiresSignIn:true});}
-    if(resource==='offers'&&request.method==='GET'&&url.searchParams.get('status')==='1')return reply(200,{enabled:Boolean(config&&env.PULL_OFFERS_ENABLED==='true'),reviewsEnabled:Boolean(config&&env.PULL_BUYER_REVIEWS_ENABLED==='true'&&env.PULL_RESEARCH_DURABLE_ENABLED==='true'),requiresSignIn:true});
+    if(resource==='offers'&&request.method==='GET'&&url.searchParams.get('status')==='1')return reply(200,{enabled:Boolean(config&&env.PULL_OFFERS_ENABLED==='true'),requestsEnabled:Boolean(config&&buyerRequestEnabled(env)),reviewsEnabled:Boolean(config&&env.PULL_BUYER_REVIEWS_ENABLED==='true'&&env.PULL_RESEARCH_DURABLE_ENABLED==='true'),requiresSignIn:true});
     if (!config) {
       if(resource==='session'&&request.method==='GET')return reply(200,{configured:false,user:null});
       if(resource==='session'&&request.method==='POST'&&request.headers.get('content-type')?.startsWith('application/json')){
@@ -122,6 +123,10 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       if(resource==='buyer-reviews'){
         try{return reply(200,await buyerReviewsRequest({request,body,db:client(access),ownerId:user.id,env,now}));}
         catch(error){return reply(error.status||503,{error:error.status?error.message:'Saved buyer reviews are temporarily unavailable.'});}
+      }
+      if(resource==='buyer-requests'){
+        try{return reply(200,await buyerRequestsRequest({request,body,db:client(access),ownerId:user.id,env,now}));}
+        catch(error){return reply(error.status||503,{error:error.status?error.message:'Buying requests are temporarily unavailable.'});}
       }
       if(resource==='channels'){
         try{const result=await channelRequest({request,user,db:client(access),env,body,cookies:Object.fromEntries(Object.entries(cookies).map(([k,v])=>[k.startsWith(prefix)?k.slice(prefix.length):k,v])),cookie,transport,now});if(result.redirect){const h=new Headers({'Location':result.redirect,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'});for(const c of outCookies)h.append('Set-Cookie',c);return new Response(null,{status:303,headers:h});}return reply(200,result);}catch(error){return reply(error.status||503,{error:error.status?error.message:'Connection or delivery is unavailable. Check your channel before retrying.'});}
@@ -230,5 +235,5 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       return reply(200,result.data);
     } catch {return reply(503,{error:'The cloud service is temporarily unavailable. Your local work is safe.'});}
   }
-  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents'),agentChat:r=>handle(r,'agent-chat'),discovery:r=>handle(r,'discovery'),channels:r=>handle(r,'channels'),offers:r=>handle(r,'offers'),buyerReviews:r=>handle(r,'buyer-reviews')};
+  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents'),agentChat:r=>handle(r,'agent-chat'),discovery:r=>handle(r,'discovery'),channels:r=>handle(r,'channels'),offers:r=>handle(r,'offers'),buyerReviews:r=>handle(r,'buyer-reviews'),buyerRequests:r=>handle(r,'buyer-requests')};
 }

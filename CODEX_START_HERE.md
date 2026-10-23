@@ -1,6 +1,6 @@
 # Pull GTM V2 — Codex continuation
 
-Handoff date: 23 October 2026. Latest engineering audit: `docs/PULL-V2-QUALITY-AUDIT.md`; workflow checkpoint: `docs/PULL-V2-BUYER-REVIEW-STATUS.md`; previous offer/page layer: `docs/PULL-V2-OFFER-FLOW-STATUS.md`. Repository: `callmesoye/Pull-GTM`. Branch: `v2/product-led-intelligence`. Open this branch in Codex and read this file first. Do not assume the original ChatGPT filesystem path exists on the Mac or in Codex cloud.
+Handoff date: 23 October 2026. Latest implementation: `docs/PULL-V2-BUYER-REQUEST-STATUS.md`; engineering audit: `docs/PULL-V2-QUALITY-AUDIT.md`; seller review checkpoint: `docs/PULL-V2-BUYER-REVIEW-STATUS.md`. Repository: `callmesoye/Pull-GTM`. Branch: `v2/product-led-intelligence`. Open this branch in Codex and read this file first. Do not assume the original ChatGPT filesystem path exists on the Mac or in Codex cloud.
 
 ## Preserve the working product
 
@@ -18,10 +18,11 @@ Pull helps a seller find relevant buyers for a specific offer, including difficu
 - Bounded buyer research: up to four hypotheses/eight source reservations, supported search providers, durable journal/recovery contracts and evidence tiers.
 - Saved offer API, immutable version storage preparation, seller confirmation form and actual backend research binding. Optional bounded checks of approved original pages. See `docs/PULL-V2-OFFER-FLOW-STATUS.md` for enablement and limits.
 - Original-page request/budget/year observations, persistent seller assessments, linked correction history and reported outcomes. These do not establish independently verified buyers.
+- First-party buyer request intake, separate discovery/contact consent, immutable revisions, canonical withdrawal, category-bound saved-offer matching and a workspace outside chat. Defaults private; requires isolated V2 schema/flag setup. No populated buyer pool or independent buyer verification is claimed.
 - Permissioned CRM integration handoff contract in `server/integration-handoff.js`.
 - Opportunity precision and offer-level buyer finding evaluation in `server/v2-evaluation.js`, using synthetic tests only. No real buyer finding rate has been measured.
 - V2 isolation guard and SQL preparation. Preparation does not mean SQL is deployed.
-- Not yet implemented end to end: private image intake/vision, semantic original-request/buyer verification, an opt-in buyer pool, lead campaign integration, and a production outcome-learning worker. Opening an original page is implemented but is not buyer verification.
+- Not yet implemented end to end: private image intake/vision, semantic original-request/buyer verification, specific-offer buyer responses, external partner feeds, lead campaign integration, and a production outcome-learning worker. Opening an original page or posting a request is not independent buyer verification.
 - There is no evidence of either 70% or 98% live buyer finding performance. 98% is an aspiration; precision of cards is a different metric from offers receiving buyers or sales.
 
 ## Read in this order
@@ -34,10 +35,10 @@ Pull helps a seller find relevant buyers for a specific offer, including difficu
 
 ## Continue with implementation
 
-First inspect applicable AGENTS.md, git status, actual source and tests. Run `npm ci --ignore-scripts` and `npm run quality` in a clean checkout. The latest local suite passed **495 tests**, syntax and whitespace checks. Source observation version 2 preserves block boundaries, abstains on ambiguous pages and leaves bare dollar currencies unresolved. That is local verification, not GitHub Actions or a live integration result.
+First inspect applicable AGENTS.md, git status, actual source and tests. Run `npm ci --ignore-scripts` and `npm run quality` in a clean checkout. The latest local suite passed **516 tests**, syntax and whitespace checks. Source observation version 2 preserves block boundaries, abstains on ambiguous pages and leaves bare dollar currencies unresolved. That is local verification, not GitHub Actions or a live integration result.
 
-Next extend the implemented saved offer → bounded search → original-page observations → persistent seller assessment/reporting flow with trusted buyer-response or partner-request evidence and independent pilot adjudication. Cars in Lagos/Abuja are one pilot; include service and wholesale fixtures so the abstraction is not car-only. Implement in small tested commits. Preserve identity validation, source rights, government/public-institution exclusions, owner isolation, journal reservations, cost caps and explicit send approvals. Do not lower qualification just to increase the count.
+Next extend the implemented source research and first-party request matching with seller-approved in-Pull introductions, authenticated responses about a specific offer, attributable permitted partner feeds and independent pilot adjudication. Product words and a confirmed email account do not establish full fit or buyer qualification. Cars in Lagos/Abuja are one pilot; include service and wholesale cases. Preserve source rights, government/public-institution exclusions, owner isolation, journal reservations, cost caps and explicit send approvals. Do not lower qualification just to increase the count.
 
-The subsequent slices are consented buyer request intake, seller-approved demand capture, qualification, outcome recording and controlled evaluation. Never fabricate a buyer, use directory presence as purchase intent, infer personal wealth from lifestyle, or count snippets as verified demand. Use seller-approved activation when public requests are scarce. Research, messages, ad spending and transactions have separate authority and evidence requirements.
+Subsequent slices include seller-approved demand capture, deeper qualification, verified outcome recording and controlled evaluation. Never fabricate a buyer, use directory presence as purchase intent, infer personal wealth from lifestyle, or count snippets/self-reports as verified demand. Use seller-approved activation when public requests are scarce. Research, messages, ad spending and transactions have separate authority and evidence requirements.
 
 Report changed files, actual behavior, test output, what is still missing, and the next concrete step. This task authorizes development and local tests, not live deployments, account changes, migrations, campaigns or outreach.

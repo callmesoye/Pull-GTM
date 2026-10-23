@@ -219,3 +219,5 @@ body:has(.settings-view) .page-heading, body:has(.settings-view) #local-notice {
 .buyer-review-panel fieldset{border:0;margin:0;padding:0;min-width:0}
 
 .offer-panel fieldset{border:0;margin:0;padding:0;min-width:0}
+
+.buyer-requests-workspace fieldset{border:0;margin:0;padding:0;min-width:0}.buyer-requests-workspace label:has(input[type=checkbox]){display:block;margin:12px 0}.buyer-requests-workspace .offer-list li{align-items:flex-start}.buyer-requests-workspace details{margin:16px 0}

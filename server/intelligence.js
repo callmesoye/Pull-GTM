@@ -6,6 +6,7 @@ import {createResearchJournal} from './research-journal.js';
 import {buyerResearchInput,discoverBuyerRoutes,mergeBuyerResearch} from './buyer-research.js';
 import {bindResearchPlan} from './v2-handoff.js';
 import {approvedSourceHosts,checkBuyerSource,readApprovedPage} from './source-check.js';
+import {qualifySourceRequest} from './request-qualification.js';
 
 const schema=properties=>({type:'object',properties,required:Object.keys(properties),additionalProperties:false});
 const string={type:'string'};
@@ -34,6 +35,7 @@ export function createIntelligenceTools({db,ownerId,env,transport,useWorkspace=f
       item.sourceCheck=checkedSources.get(item.source_url)||{state:'check_limit_reached',originalChecked:false};
     }
     result.sourceChecks={status:'bounded_pass_finished',attempted:checkedSources.size,opened:[...checkedSources.values()].filter(x=>x.originalChecked).length,unchecked:result.opportunities.filter(item=>!item.sourceCheck?.originalChecked).length,max:2};
+    for(const item of result.opportunities)item.qualification=qualifySourceRequest(confirmedOffer,item);
   };
   const hooks=()=>journal?{beforeRequest:step=>journal.reserve(step),afterRequest:(step,response)=>journal.record(step,response)}:{beforeRequest:async()=>{
     const claim=await db.rpc('claim_pull_search_requests',{p_requests:1});
