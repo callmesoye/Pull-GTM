@@ -33,8 +33,47 @@ async function workspace(initialHash='') {
   const context={renderBuyerReview,buyerReviewQuestions,renderOfferPanel,renderAuthWorkspace,renderDraftWorkspace,draftChannels,createContextualWorkspace,renderOpportunityWorkspace,...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,crypto:webcrypto,URL,URLSearchParams,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
   vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,loadAutomations,askAI,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData,onboardingDrafts,offerState,buyerReviewState}),update:changes=>{if(changes.onboardingDrafts)onboardingDrafts=changes.onboardingDrafts;if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
-  return {app:context.testApp,element,location,calls,respond:fn=>{context.cloudRequest=fn;},hash:()=>windowEvents.get('hashchange')(),submit:async(id,values)=>{context.FormData=class{constructor(){}get(key){return values[key]??null;}};const event={target:{id},preventDefault(){}};for(const callback of events.get('submit'))await callback(event);},click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
+  return {app:context.testApp,element,location,calls,respond:fn=>{context.cloudRequest=fn;},hash:()=>windowEvents.get('hashchange')(),input:async(id,name,value,type='input')=>{for(const callback of events.get(type)||[])await callback({target:{dataset:{},name,value,closest:()=>({id})}});},submit:async(id,values)=>{context.FormData=class{constructor(){}get(key){return values[key]??null;}};const event={target:{id},preventDefault(){}};for(const callback of events.get('submit'))await callback(event);},click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
 }
+
+test('An unfinished outcome survives saving a separate assessment and is cleared on account change',async()=>{
+  const f=await workspace();
+  const review={id:'review',revision:1,answers:{actorRole:'unknown'},note:'',assessment:{state:'needs_more_checks'}};
+  const context={candidate:{id:'source',title:'Request'},offer:{version:1,fields:{product:'Office cleaning',location:'Abuja'}},review,outcomes:[],notice:'Seller report only'};
+  f.respond(async(path,body)=>{
+    if(path==='ai'&&body)return {reply:'Check the source.',research:[{type:'buyer_research',run_id:'run',reviewAvailable:true,opportunities:[context.candidate]}]};
+    if(path==='ai')return {configured:true};
+    if(path==='agents')return {tokens:[]};
+    if(path.startsWith('buyer-reviews?'))return structuredClone(context);
+    if(path==='buyer-reviews')return {review:{...review,revision:2,answers:body.answers,note:body.note}};
+    return {};
+  });
+  f.app.setCloudUser({id:'seller-A'});await f.app.askAI('Find requests');await f.click({buyerReview:'1:0:0'});
+  await f.input('buyer-outcome-form','kind','replied','change');
+  await f.input('buyer-outcome-form','note','They asked for a fresh quote tomorrow.');
+  await f.submit('buyer-review-form',{actorRole:'unknown',note:''});
+  assert.equal(f.app.get().buyerReviewState.outcomeDraft.kind,'replied');
+  assert.match(f.element('#dialog-content').innerHTML,/They asked for a fresh quote tomorrow\./);
+  assert.match(f.element('#dialog-content').innerHTML,/value="replied" selected/);
+  f.app.setCloudUser({id:'seller-B'});assert.equal(f.app.get().buyerReviewState,null);
+});
+
+test('A pending offer save locks its fields and ignores duplicate submissions',async()=>{
+  const f=await workspace();let finish,posts=0;
+  f.respond(async(path,body)=>{
+    if(path==='offers?status=1')return {enabled:true};
+    if(path==='offers'&&body){posts++;return new Promise(resolve=>{finish=resolve;});}
+    if(path==='offers')return {offers:[]};
+    return {};
+  });
+  f.app.setCloudUser({id:'seller-A'});f.app.navigate('prospects');await new Promise(resolve=>setImmediate(resolve));
+  const input={product:'Wholesale rice',location:'Kano',price:'NGN 80000'};
+  const pending=f.submit('offer-form',input);await new Promise(resolve=>setImmediate(resolve));
+  assert.match(f.element('#view-content').innerHTML,/<fieldset disabled aria-label="Selling details">/);
+  await f.submit('offer-form',input);assert.equal(posts,1);
+  finish({offer:{id:f.app.get().offerState.draft.id,version:1,fields:input}});await pending;
+  assert.equal(f.app.get().offerState.busy,false);assert.equal(f.app.get().offerState.offers.length,1);
+});
 
 test('Merged routes retain AI, continuous Settings, Automations, Connect, and Support',async()=>{
   const {app,element,calls}=await workspace();

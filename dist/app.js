@@ -121,7 +121,15 @@ function paintBuyerReview(){
   modal('Review buying request',renderBuyerReview(buyerReviewState,escape));
 }
 function keepBuyerReviewDraft(event){
-  if(!buyerReviewState?.context||buyerReviewState.busy||event.target.closest('form')?.id!=='buyer-review-form')return;
+  if(!buyerReviewState?.context||buyerReviewState.busy)return;
+  const formId=event.target.closest('form')?.id;
+  if(formId==='buyer-outcome-form'){
+    const {name,value}=event.target;
+    if(!['kind','note'].includes(name))return;
+    buyerReviewState.outcomeDraft={kind:buyerReviewState.correctionId?'correction':'contacted',note:'',...buyerReviewState.outcomeDraft,[name]:value};
+    return;
+  }
+  if(formId!=='buyer-review-form')return;
   const {name,value}=event.target,draft=buyerReviewState.draft||{answers:{...buyerReviewState.context.review?.answers},note:buyerReviewState.context.review?.note||''};
   if(name==='note')draft.note=value;
   else if(['actorRole',...buyerReviewQuestions.map(([key])=>key)].includes(name))draft.answers[name]=value;

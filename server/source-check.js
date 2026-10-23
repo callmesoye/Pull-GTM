@@ -60,11 +60,14 @@ export async function readApprovedPage(value,{hosts,resolve=lookup,request=https
   }finally{clearTimeout(timer);controller.abort();}
 }
 function pageText(html,type){
-  const text=/^text\/html/i.test(type)?html.replace(/<!--[\s\S]*?-->/g,' ').replace(/<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,' ').replace(/<[^>]*>/g,' '):html;
+  // Keep block boundaries. Joining separate cards or posts can attach one
+  // person's request to another person's product, budget or closure notice.
+  const text=/^text\/html/i.test(type)?html.replace(/<!--[\s\S]*?-->/g,' ').replace(/<(script|style|noscript|template)\b[^>]*>[\s\S]*?<\/\1\s*>/gi,' ')
+    .replace(/<\/?(?:address|article|aside|blockquote|br|dd|div|dl|dt|fieldset|figcaption|figure|footer|form|h[1-6]|header|hr|li|main|nav|ol|p|pre|section|table|tbody|td|th|thead|tr|ul)\b[^>]*>/gi,'\n').replace(/<[^>]*>/g,' '):html;
   return text.replace(/&(?:#(\d+)|#x([0-9a-f]+)|([a-z]+));/gi,(match,decimal,hex,name)=>{
     if(decimal||hex){const n=parseInt(decimal||hex,hex?16:10);return n>0&&n<=0x10ffff?String.fromCodePoint(n):' ';}
     return {amp:'&',lt:'<',gt:'>',quot:'"',apos:"'",nbsp:' '}[name.toLowerCase()]||match;
-  }).normalize('NFKC').replace(/\s+/g,' ').trim();
+  }).normalize('NFKC').replace(/\r\n?/g,'\n').replace(/[^\S\n]+/g,' ').replace(/ *\n */g,'\n').replace(/\n{2,}/g,'\n').trim();
 }
 const words=s=>s.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.join(' ')||'';
 export async function checkBuyerSource(candidate,offer,{hosts,reader=readApprovedPage,now=()=>new Date()}={}){

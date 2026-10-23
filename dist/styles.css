@@ -217,3 +217,5 @@ body:has(.settings-view) .page-heading, body:has(.settings-view) #local-notice {
 .buyer-review-panel .account-form{max-width:none}.buyer-review-panel details{margin:18px 0}.buyer-review-panel summary{cursor:pointer;padding:10px 0}.buyer-review-panel blockquote{margin:12px 0;padding:12px 18px;border-left:3px solid #8799d4;background:#f5f7fc;overflow-wrap:anywhere}.buyer-review-panel li{padding:12px 0;border-bottom:1px solid #e5eaf3}.buyer-review-panel select{width:100%}@media(max-width:640px){.buyer-review-panel .section-grid{grid-template-columns:1fr}}
 
 .buyer-review-panel fieldset{border:0;margin:0;padding:0;min-width:0}
+
+.offer-panel fieldset{border:0;margin:0;padding:0;min-width:0}

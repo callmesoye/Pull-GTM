@@ -1,6 +1,6 @@
 # Pull GTM V2 — Codex continuation
 
-Handoff date: 23 October 2026. Latest implementation checkpoint: `docs/PULL-V2-BUYER-REVIEW-STATUS.md`; previous offer/page layer: `docs/PULL-V2-OFFER-FLOW-STATUS.md`. Repository: `callmesoye/Pull-GTM`. Branch: `v2/product-led-intelligence`. Open this branch in Codex and read this file first. Do not assume the original ChatGPT filesystem path exists on the Mac or in Codex cloud.
+Handoff date: 23 October 2026. Latest engineering audit: `docs/PULL-V2-QUALITY-AUDIT.md`; workflow checkpoint: `docs/PULL-V2-BUYER-REVIEW-STATUS.md`; previous offer/page layer: `docs/PULL-V2-OFFER-FLOW-STATUS.md`. Repository: `callmesoye/Pull-GTM`. Branch: `v2/product-led-intelligence`. Open this branch in Codex and read this file first. Do not assume the original ChatGPT filesystem path exists on the Mac or in Codex cloud.
 
 ## Preserve the working product
 
@@ -34,7 +34,7 @@ Pull helps a seller find relevant buyers for a specific offer, including difficu
 
 ## Continue with implementation
 
-First inspect applicable AGENTS.md, git status, actual source and tests. Run `npm ci`, `npm run check`, and `npm test` in a clean checkout. The latest local suite passed **463 tests** and syntax checks. That is local verification, not GitHub Actions or a live integration result.
+First inspect applicable AGENTS.md, git status, actual source and tests. Run `npm ci --ignore-scripts` and `npm run quality` in a clean checkout. The latest local suite passed **495 tests**, syntax and whitespace checks. Source observation version 2 preserves block boundaries, abstains on ambiguous pages and leaves bare dollar currencies unresolved. That is local verification, not GitHub Actions or a live integration result.
 
 Next extend the implemented saved offer → bounded search → original-page observations → persistent seller assessment/reporting flow with trusted buyer-response or partner-request evidence and independent pilot adjudication. Cars in Lagos/Abuja are one pilot; include service and wholesale fixtures so the abstraction is not car-only. Implement in small tested commits. Preserve identity validation, source rights, government/public-institution exclusions, owner isolation, journal reservations, cost caps and explicit send approvals. Do not lower qualification just to increase the count.
 

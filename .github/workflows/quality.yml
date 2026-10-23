@@ -7,14 +7,25 @@ permissions:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22', '24']
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
           package-manager-cache: false
       - run: npm ci --ignore-scripts
-      - run: npm run check
-      - run: npm test
+      - run: npm run quality
+      - name: Record verification evidence
+        if: always()
+        run: |
+          if [ -f artifacts/quality/report.json ]
+          then
+            cat artifacts/quality/report.json
+          fi

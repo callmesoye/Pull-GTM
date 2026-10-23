@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {renderBuyerReview} from '../dist/buyer-review-ui.js';
 import {renderResearchResults} from '../dist/intelligence-ui.js';
+import {renderOfferPanel} from '../dist/offers-ui.js';
 const e=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 test('Source review controls require a persisted review capability and never present reports as verified buyers',()=>{
   const result={type:'buyer_research',run_id:'run',opportunities:[{title:'<script>bad</script>',source_url:'https://requests.example/item',missing:[]}]};
@@ -15,4 +16,15 @@ test('Review and correction history escapes seller text and keeps self-report la
     outcomes:[{id:'old',kind:'sale',note:'Original report',reportedAt:'2026-10-23'},{id:'new',kind:'correction',note:'Sale was not completed.',supersedesId:'old',reportedAt:'2026-10-23'}]}},e);
   assert.ok(!html.includes('<script>'));assert.ok(!html.includes('href="javascript:'));
   assert.match(html,/Sale reported · corrected/);assert.match(html,/does not send a message or verify a sale/);
+});
+
+test('Ambiguous original pages explain why one buyer request cannot be attributed',()=>{
+  const candidate={title:'Several requests',sourceCheck:{originalChecked:true,assessment:{state:'ambiguous_page',conflicts:[]}}};
+  const html=renderBuyerReview({context:{candidate,offer:{version:1,fields:{product:'Rice',location:'Kano'}},outcomes:[]}},e);
+  assert.match(html,/multiple product statements/);
+  assert.match(html,/aria-describedby="buyer-review-note-help"/);
+  assert.match(html,/aria-label="Your assessment"/);
+  const source=renderResearchResults([{type:'buyer_research',opportunities:[candidate]}],0,e);
+  assert.match(source,/specific buying request could not be attributed/);
+  assert.match(renderOfferPanel({enabled:true,busy:true},e),/<fieldset disabled aria-label="Selling details">/);
 });
