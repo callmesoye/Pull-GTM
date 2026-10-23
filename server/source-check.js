@@ -1,6 +1,7 @@
 import {lookup} from 'node:dns/promises';
 import {request as httpsRequest} from 'node:https';
 import {createHash} from 'node:crypto';
+import {observeBuyerRequest} from './buyer-assessment.js';
 
 const blockedPlatforms=['jiji.ng','instagram.com','facebook.com','linkedin.com','twitter.com','x.com','tiktok.com'];
 const hostPattern=/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
@@ -79,6 +80,7 @@ export async function checkBuyerSource(candidate,offer,{hosts,reader=readApprove
     return {state:'page_opened',originalChecked:true,finalUrl:page.url,checkedAt:now().toISOString(),
       contentHash:createHash('sha256').update(text).digest('hex'),exactTermsPresent,
       excerptPresent:excerpt.length>=20?normalized.includes(' '+excerpt+' '):null,
+      assessment:observeBuyerRequest(text,offer),
       buyerConfirmed:false,notice:'Original page opened. Author, current buying need, selling terms and contact permission still need verification.'};
   }catch{return {state:'unavailable',originalChecked:false};}
 }

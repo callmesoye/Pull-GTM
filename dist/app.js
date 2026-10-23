@@ -1,3 +1,4 @@
+import {renderBuyerReview,buyerReviewQuestions} from './buyer-review-ui.js';
 import {renderOfferPanel} from './offers-ui.js';
 import {renderAuthWorkspace} from './auth-workspace.js';
 import {renderDraftWorkspace,draftChannels} from './draft-workspace.js';
@@ -16,7 +17,7 @@ import {renderAgentAIView} from './agent-ai.js';
 import {accountConfirmation,onboardingChoices,onboardingForm,applyOnboarding} from './onboarding.js';
 const $=s=>document.querySelector(s);
 const contextualWorkspace=createContextualWorkspace($('#detail-dialog'),{document,window});
-function closeDialog(options){return contextualWorkspace.close(options);}
+function closeDialog(options){buyerReviewState=null;buyerReviewEpoch++;return contextualWorkspace.close(options);}
 const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const storageKey='pull-gtm-workspace-v1';
 let state={version:1,prospects:[],suppressions:[],shortlist:[],drafts:{},audit:[],mode:'empty',identity:'Pull GTM',context:'company',persona:'business',website:'',offer:'',remember:false,setup:false,rules:{roles:'',industries:'',countries:'',min:'',max:'',signals:'',evidence:false,days:'90'},duplicates:0};
@@ -34,6 +35,7 @@ let agentState={configured:null,endpoint:null,tokens:[],busy:false,error:'',oneT
 let automationData={workflows:[],runs:[],loading:false};
 let nativeChannels={connections:[],providers:[],deliveries:[],error:'',loading:false};
 let profile=null,profileLoading=false,profileError='';
+let buyerReviewState=null,buyerReviewEpoch=0;
 let offerState={enabled:false,offers:[],draft:null,busy:false,error:'',notice:''};
 let offerLoadEpoch=0;
 let discoveryEpoch=0;
@@ -52,7 +54,7 @@ async function refreshOffers(){
   try{
     const status=await cloudRequest('offers?status=1',undefined,ticket.id);
     if(!accountGuard.current(ticket)||epoch!==offerLoadEpoch)return;
-    offerState.enabled=status.enabled===true;
+    offerState.enabled=status.enabled===true;offerState.reviewsEnabled=status.reviewsEnabled===true;
     if(offerState.enabled){
       const result=await cloudRequest('offers',undefined,ticket.id);
       if(!accountGuard.current(ticket)||epoch!==offerLoadEpoch)return;
@@ -91,16 +93,96 @@ document.addEventListener('click',async event=>{
   if(button.dataset.action==='offer-clear'){assistantState.selectedOffer=null;assistantState.researchRequest=null;assistantState.researchRequestId=null;paintAI();return;}
   if(button.dataset.action==='offer-refresh'){if(!offerState.busy)await refreshOffers();return;}
   if(button.dataset.action==='offer-new'){if(offerState.busy)return;offerState.draft=null;offerState.error='';if(view==='prospects')render();return;}
-  const id=button.dataset.offerEdit||button.dataset.offerResearch;
+  const id=button.dataset.offerEdit||button.dataset.offerResearch||button.dataset.offerReviews;
   if(!id||offerState.busy)return;
   const offer=offerState.offers.find(o=>o.id===id);
   if(!offer||!cloud.user||!cloud.verified)return;
+  if(button.dataset.offerReviews){await openOfferReviews(offer);return;}
   if(button.dataset.offerEdit){offerState.draft={...offer,exactTerm:offer.exactTerms?.[0]||''};offerState.notice='';render();return;}
   syncAssistantAccount();
   assistantState.selectedOffer=offer;assistantState.mode='pull';assistantState.allowResearch=true;
   assistantState.researchRequest=null;assistantState.researchRequestId=null;
   navigate('assistant');
   await askAI('Find possible buyers and buying routes for my saved offer. Check the product and location carefully, explain what still needs verification, and show the sources.');
+});
+async function openOfferReviews(offer){
+  if(!cloud.user||!cloud.verified)return;
+  const ticket=accountGuard.ticket();
+  modal('Your product reviews','<p role="status">Loading your saved assessments…</p>');
+  const epoch=buyerReviewEpoch;
+  try{
+    const result=await cloudRequest('buyer-reviews?'+new URLSearchParams({offerId:offer.id,offerVersion:String(offer.version)}),undefined,ticket.id);
+    if(!accountGuard.current(ticket)||epoch!==buyerReviewEpoch||!$('#detail-dialog').open)return;
+    modal('Your product reviews',`<p>${escape(offer.fields.product)} · ${escape(offer.fields.location)}</p><p class="small-print">${escape(result.notice)}</p>${result.reviews.length?`<ul class="offer-list">${result.reviews.map(r=>`<li><div><strong>${escape(r.sourceTitle)}</strong><p>Your assessment · version ${escape(r.revision)}</p></div><button class="button secondary small" data-review-run="${escape(r.runId)}" data-review-source="${escape(r.sourceId)}">Open review</button></li>`).join('')}</ul>`:'<p>You have no saved assessments for this product version yet.</p>'}`);
+  }catch(error){if(accountGuard.current(ticket)&&epoch===buyerReviewEpoch&&$('#detail-dialog').open)modal('Your product reviews',`<p role="alert">${escape(error.message)}</p>`);}
+}
+function paintBuyerReview(){
+  if(!buyerReviewState||!$('#detail-dialog').open)return;
+  modal('Review buying request',renderBuyerReview(buyerReviewState,escape));
+}
+function keepBuyerReviewDraft(event){
+  if(!buyerReviewState?.context||buyerReviewState.busy||event.target.closest('form')?.id!=='buyer-review-form')return;
+  const {name,value}=event.target,draft=buyerReviewState.draft||{answers:{...buyerReviewState.context.review?.answers},note:buyerReviewState.context.review?.note||''};
+  if(name==='note')draft.note=value;
+  else if(['actorRole',...buyerReviewQuestions.map(([key])=>key)].includes(name))draft.answers[name]=value;
+  buyerReviewState.draft=draft;
+}
+document.addEventListener('input',keepBuyerReviewDraft);
+document.addEventListener('change',keepBuyerReviewDraft);
+async function openBuyerReview(runId,sourceId){
+  if(!cloud.user||!cloud.verified)return;
+  const ticket=accountGuard.ticket(),epoch=++buyerReviewEpoch;
+  buyerReviewState={runId,sourceId,context:null,busy:false,error:'',message:'',draft:null,pending:null};
+  modal('Review buying request','<p id="buyer-review-loading" role="status">Loading the saved source…</p>');
+  try{
+    const context=await cloudRequest('buyer-reviews?'+new URLSearchParams({runId,sourceId}),undefined,ticket.id);
+    if(!accountGuard.current(ticket)||epoch!==buyerReviewEpoch||!$('#detail-dialog').open)return;
+    buyerReviewState.context=context;paintBuyerReview();
+  }catch(error){if(accountGuard.current(ticket)&&epoch===buyerReviewEpoch&&$('#detail-dialog').open)modal('Review buying request',`<p class="form-error" role="alert">${escape(error.message)}</p>`);}
+}
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('button');if(!button)return;
+  if(button.dataset.reviewRun&&button.dataset.reviewSource){await openBuyerReview(button.dataset.reviewRun,button.dataset.reviewSource);return;}
+  if(button.dataset.buyerReview){
+    if(!cloud.verified)return;
+    const parts=button.dataset.buyerReview.split(':');if(parts.length!==3||parts.some(p=>!/^\d+$/.test(p)))return;
+    const [messageIndex,resultIndex,sourceIndex]=parts.map(Number),result=assistantState.messages[messageIndex]?.research?.[resultIndex],candidate=result?.opportunities?.[sourceIndex];
+    if(!result?.reviewAvailable||!candidate?.id||!result.run_id)return;
+    await openBuyerReview(result.run_id,candidate.id);return;
+  }
+  if(!buyerReviewState?.context||buyerReviewState.busy)return;
+  if(button.dataset.buyerCorrect){
+    if(!buyerReviewState.context.outcomes.some(o=>o.id===button.dataset.buyerCorrect))return;
+    buyerReviewState.correctionId=button.dataset.buyerCorrect;buyerReviewState.outcomeDraft=null;buyerReviewState.pending=null;paintBuyerReview();
+  }
+  if(button.dataset.buyerCancelCorrection!==undefined){buyerReviewState.correctionId=null;buyerReviewState.outcomeDraft=null;buyerReviewState.pending=null;paintBuyerReview();}
+});
+document.addEventListener('submit',async event=>{
+  const form=event.target,isReview=form.id==='buyer-review-form';
+  if(!isReview&&form.id!=='buyer-outcome-form')return;
+  event.preventDefault();if(!buyerReviewState?.context||buyerReviewState.busy||!cloud.user||!cloud.verified)return;
+  const state=buyerReviewState,epoch=buyerReviewEpoch,ticket=accountGuard.ticket(),data=new FormData(form);
+  let body;
+  if(isReview){
+    const answers=Object.fromEntries(['actorRole',...buyerReviewQuestions.map(([name])=>name)].map(name=>[name,String(data.get(name)||'unknown')]));
+    state.draft={answers,note:String(data.get('note')||'')};
+    body={action:'review',runId:state.runId,sourceId:state.sourceId,expectedRevision:state.context.review?.revision||0,...state.draft};
+  }else{
+    state.outcomeDraft={kind:state.correctionId?'correction':String(data.get('kind')||''),note:String(data.get('note')||'')};
+    body={action:'outcome',reviewId:state.context.review.id,...state.outcomeDraft,...(state.correctionId?{supersedesId:state.correctionId}:{})};
+  }
+  const fingerprint=JSON.stringify(body);
+  if(state.pending?.fingerprint!==fingerprint)state.pending={fingerprint,requestKey:crypto.randomUUID()};
+  body.requestKey=state.pending.requestKey;
+  state.busy=true;state.error='';state.message='';paintBuyerReview();
+  try{
+    const result=await cloudRequest('buyer-reviews',body,ticket.id);
+    if(!accountGuard.current(ticket)||epoch!==buyerReviewEpoch||!$('#detail-dialog').open)return;
+    if(isReview){state.context.review=result.review;state.draft=null;state.message='Your assessment was saved.';}
+    else{state.context.outcomes=[result.outcome,...state.context.outcomes.filter(o=>o.id!==result.outcome.id)];state.outcomeDraft=null;state.correctionId=null;state.message='Your report was saved.';}
+    state.pending=null;
+  }catch(error){if(accountGuard.current(ticket)&&epoch===buyerReviewEpoch)state.error=error.message;}
+  finally{if(accountGuard.current(ticket)&&epoch===buyerReviewEpoch){state.busy=false;paintBuyerReview();}}
 });
 let toastTimer;
 function toast(text){$('#toast').textContent=text;$('#toast').classList.add('visible');clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').classList.remove('visible'),4500);}
@@ -157,6 +239,7 @@ function inboxView(){return `<div class="inbox-shell panel"><aside class="inbox-
 function resultsView(){const items=evaluated(),reviewed=items.filter(reviewedEligible),drafts=reviewed.map(p=>state.drafts[p.id]).filter(Boolean);return `<div class="results-summary results-four">${[['Prospects reviewed',reviewed.length,'Your current shortlist decisions'],['Drafts prepared',drafts.filter(d=>d.ready).length,'Prepared does not mean sent'],['Provider submissions',nativeChannels.deliveries.filter(d=>d.status==='submitted').length,'Provider accepted; delivery and replies unverified'],['Qualified conversations',0,'No verified reply events']].map(([l,n,p])=>`<div class="summary-card"><span class="eyebrow">${l}</span><span class="number">${n}</span><p>${p}</p></div>`).join('')}</div><div class="section-grid"><section class="panel"><div class="panel-head"><div><h2>Relevance before reach</h2><p>${state.mode==='example'?'Fictional list assessment':'An assessment of your list, not a sales forecast'}</p></div></div><div class="overview-body">${[['Unique prospects',items.length],['Audience matches',items.filter(p=>p.status==='fit').length],['Need evidence',items.filter(p=>p.status==='review').length],['Excluded',items.filter(p=>p.status==='excluded').length],['Duplicates removed',state.duplicates]].map(([l,n])=>`<div class="metric-row"><span>${l}</span><strong>${n}</strong></div>`).join('')}</div></section><section class="panel"><div class="panel-head"><div><h2>What counts as a result?</h2><p>Definitions you can inspect.</p></div></div><div class="definition-body"><p><strong>Audience match</strong> satisfies your configured criteria. It is still unverified.</p><p><strong>Reviewed prospect</strong> is a person you inspected and shortlisted.</p><p><strong>Sent message</strong> requires a successful provider event. A draft does not count.</p><p><strong>Qualified conversation</strong> needs a real reply and an explicit qualification decision.</p><p><strong>Booked meeting</strong> requires a confirmed calendar event. A request for a meeting does not count.</p></div></section></div><section class="panel activity-panel"><div class="panel-head"><div><h2>Workspace activity</h2><p>Local actions with their time and data origin.</p></div><button class="link-button" data-action="export-audit">Export activity</button></div>${state.audit.length?`<ol class="activity-list">${state.audit.slice(0,30).map(a=>`<li><span class="activity-symbol" aria-hidden="true">✓</span><div><strong>${escape(a.action)}</strong><p>${escape(a.detail)}</p></div><span class="activity-time"><time datetime="${escape(a.at)}">${escape(new Date(a.at).toLocaleString())}</time><small>${a.mode==='example'?'Fictional example data':'Workspace action'}</small></span></li>`).join('')}</ol>`:'<div class="empty-results"><p class="small-print">Importing a list, reviewing prospects, and preparing drafts creates a visible activity trail.</p></div>'}</section>`;}
 function connectionsView(){return `${nativeChannelsPanel()}<section class="agents-entry"><span class="agents-entry-icon">${uiIcon('connections')}</span><div><span class="section-kicker">YOUR WORKFLOW, YOUR TOOLS</span><h2>Connect your AI.</h2><p>Connect Claude Code, Cursor, Codex, or a compatible assistant to your Pull workspace. The setup guide explains each app’s requirements, including Claude’s conditional support and ChatGPT’s pending OAuth setup.</p></div><button class="button secondary" data-view="connect">Connect your AI ${uiIcon('arrow')}</button></section><div class="section-grid">${[['CSV import','Available now','Use your own prospect list. Fields, sources, unknowns, and exclusions remain visible.','import','Import a list'],['Email','Not connected','Preparing drafts works now. Live sending needs a mailbox connection, confirmed delivery events, and suppression handling.','connection-details','What is needed'],['LinkedIn personal','Not connected','This preview supports reviewed prospects and manual message handoff. No browser automation or account credentials are used.','linkedin-details','View supported actions'],['LinkedIn company page','Not connected','Represent your company in the workspace. Page data needs approved access; messaging as a page is limited to inbound conversations.','company-details','View supported actions'],['X','Not connected','Automate audience review and draft preparation. Initial contact stays a reviewed handoff; automated replies need official API access and recipient opt-in.','x-details','View supported actions'],['Instagram & Facebook','Not connected','Page and professional-account workflows depend on the approved permissions and APIs available for your account.','meta-details','What is needed'],['AI mode',agentState.tokens.length?'Access key ready':'Works without MCP','Use local evidence guidance and prepare a prompt for your own AI. A Pull access key can let it read your saved workspace.','ai-mode','Open AI mode']].filter(([t])=>!['Email','X','LinkedIn personal'].includes(t)).map(([t,b,p,a,l],i)=>`<section class="connection-card"><div class="connection-title"><h2>${t}</h2><span class="badge ${i===0?'fit':'review'}">${b}</span></div><p>${p}</p><button class="button secondary small" data-action="${a}">${l}</button></section>`).join('')}</div><div class="insight"><span class="insight-icon">◎</span><div><strong>Worldwide targeting, honest availability.</strong><p>Pull imposes no country restriction on imported lists. Each connected provider’s coverage and permissions must be shown before a live search.</p></div></div>`;}
 function modal(title,body,footer=''){
+ if(title!=='Review buying request'){buyerReviewState=null;buyerReviewEpoch++;}
  const auth=/id="(?:account-form|email-help-form|password-reset-form|onboarding-form)"|class="pull-welcome"|class="pull-goal-grid"/.test(body)||['Sign in to Pull GTM','Account confirmed','Confirm your email','Check your inbox','Password updated','Make Pull yours','Opening your workspace','Your workspace is ready','Your work is kept'].includes(title);
  const html=`<div class="dialog-header"><div><h2 id="dialog-title">${title}</h2></div><button class="close-button" data-action="close" aria-label="Close dialog">×</button></div><div class="dialog-body">${body}</div>${footer?`<div class="dialog-footer">${footer}</div>`:''}`;
  contextualWorkspace.open(auth?renderAuthWorkspace(html):html,{variant:auth?'auth':'standard'});
@@ -440,7 +523,7 @@ document.addEventListener('submit',async e=>{
 const assistantPrompts=[['Refine my audience','Help me refine my ideal customer. Ask only the questions that affect relevance, explain any suggested changes, and preserve my chosen geographic scope.','prospects'],['Review the gaps','Look at my reviewed prospect context and explain what evidence is missing. Separate supplied facts from assumptions. Do not invent contacts or buying intent.','shield'],['Keep it in my voice','Help me write a first message in my own voice. Ask for my tone and a draft if needed, use only supplied facts, and avoid unsupported results or promises.','drafts'],['Plan an automation','List my enabled Pull workflows and help choose one for this task. If suitable, use propose_workflow with this claimed question and the current saved revision. Explain what it will do and wait for my approval in Pull. Never send messages.','automations']];
 function syncSections(){const group=['prospects','shortlist'].includes(view)?'buyers':['drafts','inbox'].includes(view)?'engage':view==='assistant'?'assistant':null;document.querySelectorAll('[data-nav-group]').forEach(button=>{const active=button.dataset.navGroup===group;button.classList.toggle('active',active);button.setAttribute('aria-current',active?'page':'false');});const tabs=$('#section-tabs');const items=group==='buyers'?[['prospects','Find buyers'],['shortlist','Shortlist'+(state.shortlist.length?' · '+state.shortlist.length:'')]]:group==='engage'?[['drafts','Outreach'],['inbox','Conversations']]:[];tabs.hidden=!items.length;tabs.innerHTML=items.map(([v,l])=>`<button class="section-tab ${v===view?'active':''}" data-view="${v}" aria-current="${v===view?'page':'false'}">${escape(l)}</button>`).join('');$('#shortlist-count').hidden=state.shortlist.length===0;}
 function syncModes(){const active=view==='assistant';if(!active)focusView=view;document.body.dataset.workspaceMode=active?'ai':'focus';$('#focus-mode')?.setAttribute('aria-pressed',String(!active));$('#ai-mode')?.setAttribute('aria-pressed',String(active));}
-function syncAssistantAccount(){const id=cloud.user?.id||null;if(assistantState.userId!==id){assistantState={...assistantState,userId:id,messages:[],agentMessages:[],mode:'pull',busy:false,error:'',draft:'',lastMessage:'',researchRequestId:null,researchRequest:null,selectedOffer:null};offerState={enabled:false,offers:[],draft:null,busy:false,error:'',notice:''};offerLoadEpoch++;agentState={configured:null,endpoint:null,tokens:[],busy:false,error:'',oneTime:null,userId:id};if(view==='assistant')paintAI();}}
+function syncAssistantAccount(){const id=cloud.user?.id||null;if(assistantState.userId!==id){assistantState={...assistantState,userId:id,messages:[],agentMessages:[],mode:'pull',busy:false,error:'',draft:'',lastMessage:'',researchRequestId:null,researchRequest:null,selectedOffer:null};buyerReviewState=null;buyerReviewEpoch++;offerState={enabled:false,offers:[],draft:null,busy:false,error:'',notice:''};offerLoadEpoch++;agentState={configured:null,endpoint:null,tokens:[],busy:false,error:'',oneTime:null,userId:id};if(view==='assistant')paintAI();}}
 function aiContext(){return assistantState.shareContext?{identity:state.identity,offer:state.offer,context:state.context,rules:state.rules,reviewed:evaluated().filter(p=>state.shortlist.includes(p.id)).slice(0,8).map(p=>({name:p.name,title:p.title,company:p.company,industry:p.industry,country:p.country,signal:p.signal,signal_date:p.signal_date,source_url:p.source_url,origin:p.origin,status:p.status})),voice:'Ask for my preferred voice when it is not supplied.'}:{identity:'',offer:'',context:'personal',rules:{},reviewed:[]};}
 function aiView(){return renderAgentAIView({cloud,agentState,state,assistantState,items:evaluated(),escape,icon:uiIcon});}
 let lastAITranscript='';

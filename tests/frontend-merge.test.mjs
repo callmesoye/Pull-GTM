@@ -1,3 +1,4 @@
+import {renderBuyerReview,buyerReviewQuestions} from '../dist/buyer-review-ui.js';
 import {renderOfferPanel} from '../dist/offers-ui.js';
 import {renderAuthWorkspace} from '../dist/auth-workspace.js';
 import {renderDraftWorkspace,draftChannels} from '../dist/draft-workspace.js';
@@ -29,10 +30,10 @@ async function workspace(initialHash='') {
   };
   const document={body:{dataset:{}},querySelector:element,querySelectorAll:()=>[],addEventListener(name,fn){events.set(name,[...(events.get(name)||[]),fn]);}};
   const location={hash:initialHash,protocol:'https:',pathname:'/',search:''};
-  const context={renderOfferPanel,renderAuthWorkspace,renderDraftWorkspace,draftChannels,createContextualWorkspace,renderOpportunityWorkspace,...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,crypto:webcrypto,URL,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
-  vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,loadAutomations,askAI,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData,onboardingDrafts,offerState}),update:changes=>{if(changes.onboardingDrafts)onboardingDrafts=changes.onboardingDrafts;if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
+  const context={renderBuyerReview,buyerReviewQuestions,renderOfferPanel,renderAuthWorkspace,renderDraftWorkspace,draftChannels,createContextualWorkspace,renderOpportunityWorkspace,...engine,...onboarding,contactOptions,displayIdentity,validContactUrl,samples,renderSimpleHome,buildAgentPrompt,renderAgentAIView,renderAutomationView,renderSettingsView,renderSettingsProfile,validateWorkspace,AccountGuard,attachSettingsNavigation(){},document,location,history:{replaceState(){}},window:{addEventListener(name,fn){windowEvents.set(name,fn);}},structuredClone,crypto:webcrypto,URL,URLSearchParams,Blob,FormData,Date,Intl,console,setTimeout:()=>0,clearTimeout(){},localStorage:{getItem:()=>null,setItem(){},removeItem(){}},sessionStorage:{getItem:()=>null,removeItem(){}},cloudRequest:async(path)=>{calls.push(path);if(path==='session')return {configured:false,user:null};if(path==='agents')return {configured:false,tokens:[]};if(path==='profile')return {profile:{display_name:'Ada'}};if(path==='automations')return {workflows:[],runs:[]};return {};},createConnectExperience:hooks=>({renderConnect:()=>'<p>Connect setup</p>',renderSupport:()=>'<p>Support options</p>',afterRender:route=>calls.push('paint:'+route),leave:()=>calls.push('leave'),accountChanged:()=>calls.push('account:'+hooks.getCloud().user?.id)})};
+  vm.runInNewContext(readFileSync(new URL('../dist/app.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'')+'\nglobalThis.testApp={navigate,setCloudUser,loadAutomations,askAI,visibleRows,guideItems,render,aiContext,applyDiscoveryResults,get:()=>({state,cloud,view,tab,query,discovery,assistantState,agentState,profile,automationData,onboardingDrafts,offerState,buyerReviewState}),update:changes=>{if(changes.onboardingDrafts)onboardingDrafts=changes.onboardingDrafts;if(changes.state)state={...state,...changes.state};if(changes.discovery)discovery={...discovery,...changes.discovery};if(changes.query!==undefined)query=changes.query;if(changes.tab)tab=changes.tab;if(changes.guideQuery!==undefined)guideQuery=changes.guideQuery;}};',context);
   await new Promise(resolve=>setImmediate(resolve));
-  return {app:context.testApp,element,location,calls,respond:fn=>{context.cloudRequest=fn;},hash:()=>windowEvents.get('hashchange')(),click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
+  return {app:context.testApp,element,location,calls,respond:fn=>{context.cloudRequest=fn;},hash:()=>windowEvents.get('hashchange')(),submit:async(id,values)=>{context.FormData=class{constructor(){}get(key){return values[key]??null;}};const event={target:{id},preventDefault(){}};for(const callback of events.get('submit'))await callback(event);},click:async dataset=>{const button={dataset};const event={target:{closest:()=>button}};for(const callback of events.get('click'))await callback(event);},import:async csv=>element('#file-input').events.get('change')({target:{files:[{text:async()=>csv}],value:'fixture.csv'}})};
 }
 
 test('Merged routes retain AI, continuous Settings, Automations, Connect, and Support',async()=>{
@@ -82,6 +83,49 @@ test('Late product responses cannot appear in a different account',async()=>{
   finish({offers:[{id:'private-offer',fields:{product:'Private item'}}]});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(f.app.get().offerState.offers.length,0);
+});
+
+test('Buyer review UI loads only a saved reference and retries a failed assessment with the same request key',async()=>{
+  const f=await workspace(),runId='5c241189-65ed-4ae6-945e-9bd606e18718',sourceId='buyer-source-'+'a'.repeat(20),posts=[];
+  const context={candidate:{id:sourceId,title:'Request to check',source_url:'https://requests.example/item'},offer:{id:'offer',version:1,fields:{product:'C300',location:'Lagos'}},review:null,outcomes:[],notice:'Seller reports are not independently verified buyers.'};
+  f.respond(async(path,body)=>{
+    if(path==='ai'&&body)return {reply:'Review this source.',research:[{type:'buyer_research',run_id:runId,reviewAvailable:true,opportunities:[context.candidate]}]};
+    if(path==='ai')return {configured:true};
+    if(path==='agents')return {tokens:[]};
+    if(path.startsWith('buyer-reviews?')){assert.ok(path.includes(runId));assert.ok(path.includes(sourceId));return structuredClone(context);}
+    if(path==='buyer-reviews'){
+      posts.push(body);if(posts.length===1)throw Error('Connection lost after submission');
+      return {review:{id:'saved-review',revision:1,answers:body.answers,note:body.note,assessment:{state:'needs_more_checks',buyerConfirmed:false},basis:'seller_reported'}};
+    }
+    return {};
+  });
+  f.app.setCloudUser({id:'seller-A'});await f.app.askAI('Find possible buyers for C300 in Lagos');
+  await f.click({buyerReview:'1:0:0'});
+  assert.match(f.element('#dialog-content').innerHTML,/What did you check/);
+  const values={actorRole:'unknown',requestActive:'unknown',productFit:'unknown',locationFit:'unknown',termsFit:'unknown',contactAllowed:'unknown',reachable:'unknown',note:''};
+  await f.submit('buyer-review-form',values);assert.equal(posts.length,1);
+  await f.submit('buyer-review-form',values);assert.equal(posts.length,2);assert.equal(posts[0].requestKey,posts[1].requestKey);
+  assert.equal(posts[0].candidate,undefined);assert.equal(posts[0].verified,undefined);
+  assert.equal(f.app.get().buyerReviewState.context.review.assessment.buyerConfirmed,false);
+  f.app.setCloudUser({id:'seller-B'});assert.equal(f.app.get().buyerReviewState,null);
+});
+
+test('Closing a buyer review prevents a late response from reopening it',async()=>{
+  const f=await workspace();let finish;
+  f.respond(async(path,body)=>{
+    if(path==='ai'&&body)return {reply:'Check this source.',research:[{type:'buyer_research',run_id:'run',reviewAvailable:true,opportunities:[{id:'source'}]}]};
+    if(path==='ai')return {configured:true};
+    if(path==='agents')return {tokens:[]};
+    if(path.startsWith('buyer-reviews?'))return new Promise(resolve=>{finish=resolve;});
+    return {};
+  });
+  f.app.setCloudUser({id:'seller-A'});await f.app.askAI('Find sources');
+  const opening=f.click({buyerReview:'1:0:0'});
+  await new Promise(resolve=>setImmediate(resolve));
+  await f.click({action:'close'});
+  finish({candidate:{title:'Late private source'},offer:{fields:{product:'Private offer'}},outcomes:[]});
+  await opening;assert.equal(f.app.get().buyerReviewState,null);
+  assert.ok(!f.element('#dialog-content').innerHTML.includes('Late private source'));
 });
 
 test('Settings deep links survive navigation from another page',async()=>{

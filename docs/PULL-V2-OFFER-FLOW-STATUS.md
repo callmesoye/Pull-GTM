@@ -1,5 +1,7 @@
 # V2 implementation checkpoint — saved offers and original-page observations
 
+Newer checkpoint: read `PULL-V2-BUYER-REVIEW-STATUS.md` for the implemented seller review/reporting layer.
+
 23 October 2026. Implemented and locally tested; not deployed to a live V2 database or real source provider.
 
 ## What runs now

@@ -5,6 +5,7 @@ import {aiConfiguration,prepareAI,generateReply,probeAI} from './ai.js';
 import {testAgentConnection} from './agent-test.js';
 import {createIntelligenceTools} from './intelligence.js';
 import {offersRequest,offerReference,loadConfirmedOffer} from './offers.js';
+import {buyerReviewsRequest} from './buyer-reviews.js';
 
 const MAX_BYTES = 3 * 1024 * 1024;
 import {validateWorkspace} from '../dist/workspace.js';
@@ -54,7 +55,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
     if (request.method==='POST' && (request.headers.get('origin')!==url.origin || request.headers.get('sec-fetch-site')==='cross-site')) return reply(403,{error:'Open Pull GTM directly to continue.'});
     if(resource==='ai'&&request.method==='GET'){const ai=aiConfiguration(env);return reply(200,{configured:Boolean(config&&ai.credential),model:ai.model,requiresSignIn:true});}
     if(resource==='discovery'&&request.method==='GET'){const search=searchConfiguration(env);return reply(200,{configured:Boolean(config&&search),provider:search?.provider||null,maxQueries:search?.maxQueries||null,requiresSignIn:true});}
-    if(resource==='offers'&&request.method==='GET'&&url.searchParams.get('status')==='1')return reply(200,{enabled:Boolean(config&&env.PULL_OFFERS_ENABLED==='true'),requiresSignIn:true});
+    if(resource==='offers'&&request.method==='GET'&&url.searchParams.get('status')==='1')return reply(200,{enabled:Boolean(config&&env.PULL_OFFERS_ENABLED==='true'),reviewsEnabled:Boolean(config&&env.PULL_BUYER_REVIEWS_ENABLED==='true'&&env.PULL_RESEARCH_DURABLE_ENABLED==='true'),requiresSignIn:true});
     if (!config) {
       if(resource==='session'&&request.method==='GET')return reply(200,{configured:false,user:null});
       if(resource==='session'&&request.method==='POST'&&request.headers.get('content-type')?.startsWith('application/json')){
@@ -118,6 +119,10 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
         try{return reply(200,await offersRequest({request,body,db:client(access),ownerId:user.id,env}));}
         catch(error){return reply(error.status||503,{error:error.status?error.message:'Saved products are temporarily unavailable.'});}
       }
+      if(resource==='buyer-reviews'){
+        try{return reply(200,await buyerReviewsRequest({request,body,db:client(access),ownerId:user.id,env,now}));}
+        catch(error){return reply(error.status||503,{error:error.status?error.message:'Saved buyer reviews are temporarily unavailable.'});}
+      }
       if(resource==='channels'){
         try{const result=await channelRequest({request,user,db:client(access),env,body,cookies:Object.fromEntries(Object.entries(cookies).map(([k,v])=>[k.startsWith(prefix)?k.slice(prefix.length):k,v])),cookie,transport,now});if(result.redirect){const h=new Headers({'Location':result.redirect,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'});for(const c of outCookies)h.append('Set-Cookie',c);return new Response(null,{status:303,headers:h});}return reply(200,result);}catch(error){return reply(error.status||503,{error:error.status?error.message:'Connection or delivery is unavailable. Check your channel before retrying.'});}
       }
@@ -146,6 +151,7 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
         if(body.action==='probe'){const {status,...data}=await probeAI({env,transport});return reply(status,data);}
         const tools=createIntelligenceTools({db:client(access),ownerId:user.id,env,transport,useWorkspace:body.useWorkspace===true,allowResearch:body.allowResearch===true,requestKey:body.researchRequestId,goalFingerprint:JSON.stringify({message:prepared.message,context:prepared.context}),confirmedOffer,sourceReader,now});
         const result=await generateReply({body,userId:user.id,env,transport,tools,confirmedOffer});try{await tools.finalizeBuyerResearch();}catch{result.researchPersistence='unavailable';if(result.reply)result.reply+='\n\nSome research progress could not be saved. The source cards in this response are still available.';}
+        for(const research of result.research||[])if(research.type==='buyer_research')research.reviewAvailable=Boolean(env.PULL_BUYER_REVIEWS_ENABLED==='true'&&env.PULL_RESEARCH_DURABLE_ENABLED==='true'&&research.offerReference&&result.researchPersistence!=='unavailable');
         const {status,...data}=result;return reply(status,data);
       }
       if(resource==='agents'){
@@ -224,5 +230,5 @@ export function createBackend({env=process.env,clientFactory=createClient,now=()
       return reply(200,result.data);
     } catch {return reply(503,{error:'The cloud service is temporarily unavailable. Your local work is safe.'});}
   }
-  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents'),agentChat:r=>handle(r,'agent-chat'),discovery:r=>handle(r,'discovery'),channels:r=>handle(r,'channels'),offers:r=>handle(r,'offers')};
+  return {session:r=>handle(r,'session'),workspace:r=>handle(r,'workspace'),profile:r=>handle(r,'profile'),ai:r=>handle(r,'ai'),agents:r=>handle(r,'agents'),agentChat:r=>handle(r,'agent-chat'),discovery:r=>handle(r,'discovery'),channels:r=>handle(r,'channels'),offers:r=>handle(r,'offers'),buyerReviews:r=>handle(r,'buyer-reviews')};
 }

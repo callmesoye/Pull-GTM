@@ -1,6 +1,6 @@
 # Pull GTM V2 — Codex continuation
 
-Handoff date: 23 October 2026. Latest implementation checkpoint: `docs/PULL-V2-OFFER-FLOW-STATUS.md`. Repository: `callmesoye/Pull-GTM`. Branch: `v2/product-led-intelligence`. Open this branch in Codex and read this file first. Do not assume the original ChatGPT filesystem path exists on the Mac or in Codex cloud.
+Handoff date: 23 October 2026. Latest implementation checkpoint: `docs/PULL-V2-BUYER-REVIEW-STATUS.md`; previous offer/page layer: `docs/PULL-V2-OFFER-FLOW-STATUS.md`. Repository: `callmesoye/Pull-GTM`. Branch: `v2/product-led-intelligence`. Open this branch in Codex and read this file first. Do not assume the original ChatGPT filesystem path exists on the Mac or in Codex cloud.
 
 ## Preserve the working product
 
@@ -17,6 +17,7 @@ Pull helps a seller find relevant buyers for a specific offer, including difficu
 - Existing AI backend, authentication, research and platform policy boundaries remain the source of truth.
 - Bounded buyer research: up to four hypotheses/eight source reservations, supported search providers, durable journal/recovery contracts and evidence tiers.
 - Saved offer API, immutable version storage preparation, seller confirmation form and actual backend research binding. Optional bounded checks of approved original pages. See `docs/PULL-V2-OFFER-FLOW-STATUS.md` for enablement and limits.
+- Original-page request/budget/year observations, persistent seller assessments, linked correction history and reported outcomes. These do not establish independently verified buyers.
 - Permissioned CRM integration handoff contract in `server/integration-handoff.js`.
 - Opportunity precision and offer-level buyer finding evaluation in `server/v2-evaluation.js`, using synthetic tests only. No real buyer finding rate has been measured.
 - V2 isolation guard and SQL preparation. Preparation does not mean SQL is deployed.
@@ -33,9 +34,9 @@ Pull helps a seller find relevant buyers for a specific offer, including difficu
 
 ## Continue with implementation
 
-First inspect applicable AGENTS.md, git status, actual source and tests. Run `npm ci`, `npm run check`, and `npm test` in a clean checkout. The latest local suite passed **447 tests** and syntax checks. That is local verification, not GitHub Actions or a live integration result.
+First inspect applicable AGENTS.md, git status, actual source and tests. Run `npm ci`, `npm run check`, and `npm test` in a clean checkout. The latest local suite passed **463 tests** and syntax checks. That is local verification, not GitHub Actions or a live integration result.
 
-Next extend the implemented saved text offer → bounded search → original-page observation flow with source-specific semantic verification, persistent reviewer qualification and real outcomes. Cars in Lagos/Abuja are one pilot; include service and wholesale fixtures so the abstraction is not car-only. Implement in small tested commits. Preserve identity validation, source rights, government/public-institution exclusions, owner isolation, journal reservations, cost caps and explicit send approvals. Do not lower qualification just to increase the count.
+Next extend the implemented saved offer → bounded search → original-page observations → persistent seller assessment/reporting flow with trusted buyer-response or partner-request evidence and independent pilot adjudication. Cars in Lagos/Abuja are one pilot; include service and wholesale fixtures so the abstraction is not car-only. Implement in small tested commits. Preserve identity validation, source rights, government/public-institution exclusions, owner isolation, journal reservations, cost caps and explicit send approvals. Do not lower qualification just to increase the count.
 
 The subsequent slices are consented buyer request intake, seller-approved demand capture, qualification, outcome recording and controlled evaluation. Never fabricate a buyer, use directory presence as purchase intent, infer personal wealth from lifestyle, or count snippets as verified demand. Use seller-approved activation when public requests are scarce. Research, messages, ad spending and transactions have separate authority and evidence requirements.
 
