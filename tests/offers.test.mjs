@@ -75,6 +75,13 @@ test('PostgreSQL offers and authenticated API preserve ownership, versions and b
     }
     assert.equal((await pg.query('select count(*)::int as n from public.pull_offer_versions')).rows[0].n,1);
   });
+  await t.test('Optional minimum order survives the authenticated API and real SQL contract',async()=>{
+    await pg.exec('begin');
+    try{
+      const response=await backend.offers(req(save({offerId:randomUUID(),fields:{product:'Fresh yam',location:'Ojuelegba',quantity:'100 kg',minimum_order:'20 kg',price:'NGN 500 per kg'},exactTerms:['yam']})));
+      assert.equal(response.status,200);const result=await response.json();assert.equal(result.offer.fields.minimum_order,'20 kg');assert.equal(result.offer.fields.quantity,'100 kg');
+    }finally{await pg.exec('rollback');}
+  });
   await t.test('Foreign users and anonymous sessions cannot read or mutate another seller offer',async()=>{
     const list=await backend.offers(req(undefined,B));assert.equal((await list.json()).offers.length,0);
     const foreign=await backend.ai(req({message:'Find buyers',offerId:id,offerVersion:1},B,'ai'));assert.equal(foreign.status,404);assert.equal(aiClaims,0);

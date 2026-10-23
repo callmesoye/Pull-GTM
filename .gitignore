@@ -7,3 +7,4 @@ node_modules/
 *.tar.gz
 *.zip
 artifacts/quality/
+artifacts/scenario-lab/

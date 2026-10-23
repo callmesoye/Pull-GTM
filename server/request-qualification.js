@@ -1,11 +1,6 @@
+import {compareCommercialTerms} from './commercial-terms.js';
 const words=v=>String(v||'').normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}]+/gu)?.join(' ')||'';
 const has=(v,term)=>Boolean(words(term))&&(' '+words(v)+' ').includes(' '+words(term)+' ');
-function askingPrice(text){
-  const m=String(text||'').trim().match(/^(NGN|₦|USD|GBP|£|EUR|€)\s*((?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)\s*(million|thousand|m|k)?$/i);
-  if(!m)return null;
-  const amount=Number(m[2].replaceAll(',',''))*(/^(million|m)$/i.test(m[3])?1e6:/^(thousand|k)$/i.test(m[3])?1000:1);
-  return amount>0&&Number.isFinite(amount)?{currency:{NGN:'NGN','₦':'NGN',USD:'USD',GBP:'GBP','£':'GBP',EUR:'EUR','€':'EUR'}[m[1].toUpperCase()],amount}:null;
-}
 // All source adapters produce explicit assertions and unknowns. None may turn
 // authenticated-account ownership into verified identity or ability to buy.
 export function qualifyBuyerRequest(offer,record,{now=new Date()}={}){
@@ -16,10 +11,10 @@ export function qualifyBuyerRequest(offer,record,{now=new Date()}={}){
   checks.push({field:'product_scope',state:'unknown',basis:'literal_words_do_not_establish_full_product_or_service_fit'});
   const sameLocation=Boolean(words(fields.location))&&words(fields.location)===words(request.location);
   checks.push({field:'location',state:sameLocation?'match':'unknown',basis:sameLocation?'same_stated_location':'fulfilment_not_established'});
-  const price=askingPrice(fields.price),budget=request.budget;
-  checks.push({field:'budget',state:price&&budget&&price.currency===budget.currency&&budget.basis==='total'&&price.amount>budget.maxAmount?'conflict':'unknown',
-    basis:price&&budget&&price.currency===budget.currency&&budget.basis==='total'?(price.amount>budget.maxAmount?'asking_price_above_stated_total_budget':'asking_price_within_budget_but_quantity_and_quote_basis_unconfirmed'):'budget_or_comparable_price_unknown'});
+  const commercial=compareCommercialTerms(fields,request);
+  checks.push(commercial.budget,commercial.quantity,commercial.minimumOrder);
   for(const [field,value] of Object.entries(request.requirements||{})){
+    if(field==='quantity')continue;
     const supplied=fields[field],same=Boolean(words(supplied))&&words(supplied)===words(value);
     checks.push({field,state:same?'match':supplied&&['year','model'].includes(field)?'conflict':'unknown',basis:same?'same_stated_value':supplied?'different_stated_values_need_review':'seller_value_missing',requestValue:value,offerValue:supplied||null});
   }

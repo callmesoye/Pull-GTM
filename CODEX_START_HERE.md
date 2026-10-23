@@ -1,6 +1,6 @@
 # Pull GTM V2 — Codex continuation
 
-Handoff date: 23 October 2026. Latest implementation: `docs/PULL-V2-BUYER-REQUEST-STATUS.md`; engineering audit: `docs/PULL-V2-QUALITY-AUDIT.md`; seller review checkpoint: `docs/PULL-V2-BUYER-REVIEW-STATUS.md`. Repository: `callmesoye/Pull-GTM`. Branch: `v2/product-led-intelligence`. Open this branch in Codex and read this file first. Do not assume the original ChatGPT filesystem path exists on the Mac or in Codex cloud.
+Handoff date: 23 October 2026. Latest implementation and research: `docs/PULL-V2-530-SCENARIO-LAB.md`; buyer-request checkpoint: `docs/PULL-V2-BUYER-REQUEST-STATUS.md`; engineering audit: `docs/PULL-V2-QUALITY-AUDIT.md`. Repository: `callmesoye/Pull-GTM`. Branch: `v2/product-led-intelligence`. Open this branch in Codex and read this file first. Do not assume the original ChatGPT filesystem path exists on the Mac or in Codex cloud.
 
 ## Preserve the working product
 
@@ -15,6 +15,9 @@ Pull helps a seller find relevant buyers for a specific offer, including difficu
 ## Implemented versus proposed
 
 - Existing AI backend, authentication, research and platform policy boundaries remain the source of truth.
+- A 530-case research lab: 520 hypothetical seller cases across 52 sectors plus 10 adversarial specifications, 20 purchase mechanisms and 51 background/technical sources. Bounded case guidance now enters product-led AI planning. This is not a ready buyer database or independent accuracy benchmark.
+- Explicit compatible quantity, minimum-order and unit-price subtotal checks in first-party request qualification. Unknown units, quote basis, delivered cost and full fit remain unknown. Optional minimum order requires the updated isolated V2 offer schema; no live migration has been applied.
+- Separate offline 98% review aids for opportunity precision and offer-level buyer finding, requiring confidence bounds and registered independent evidence. No helper verifies its submitted evidence or authorizes deployment.
 - Bounded buyer research: up to four hypotheses/eight source reservations, supported search providers, durable journal/recovery contracts and evidence tiers.
 - Saved offer API, immutable version storage preparation, seller confirmation form and actual backend research binding. Optional bounded checks of approved original pages. See `docs/PULL-V2-OFFER-FLOW-STATUS.md` for enablement and limits.
 - Original-page request/budget/year observations, persistent seller assessments, linked correction history and reported outcomes. These do not establish independently verified buyers.
@@ -35,7 +38,7 @@ Pull helps a seller find relevant buyers for a specific offer, including difficu
 
 ## Continue with implementation
 
-First inspect applicable AGENTS.md, git status, actual source and tests. Run `npm ci --ignore-scripts` and `npm run quality` in a clean checkout. The latest local suite passed **516 tests**, syntax and whitespace checks. Source observation version 2 preserves block boundaries, abstains on ambiguous pages and leaves bare dollar currencies unresolved. That is local verification, not GitHub Actions or a live integration result.
+First inspect applicable AGENTS.md, git status, actual source and tests. Run `npm ci --ignore-scripts` and `npm run quality` in a clean checkout. The latest local suite passed **527 tests**, syntax and whitespace checks. Source observation version 2 preserves block boundaries, abstains on ambiguous pages and leaves bare dollar currencies unresolved. Scenario compilation validates all 520 plans, not live buyers. That is local verification, not GitHub Actions or a live integration result.
 
 Next extend the implemented source research and first-party request matching with seller-approved in-Pull introductions, authenticated responses about a specific offer, attributable permitted partner feeds and independent pilot adjudication. Product words and a confirmed email account do not establish full fit or buyer qualification. Cars in Lagos/Abuja are one pilot; include service and wholesale cases. Preserve source rights, government/public-institution exclusions, owner isolation, journal reservations, cost caps and explicit send approvals. Do not lower qualification just to increase the count.
 

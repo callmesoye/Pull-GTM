@@ -47,3 +47,11 @@ This audit's completed local run passed **495 tests**, with zero failures, skips
 ## Release decision
 
 Continue V2 development and isolated staging preparation. Keep V1 separate. Public reliability, security and buyer performance claims require the outstanding staging, accessibility, operational and independent-outcome evidence above. The next core capability remains a consented buyer-response or attributable partner-request adapter; it must preserve actor identity, freshness, product terms and engagement permission through qualification and evaluation.
+
+## Later checkpoint: 530-case scenario lab
+
+On 23 October 2026 the expanded local suite passed **527 tests**, with zero failures, skips, cancellations or todos, plus syntax and whitespace checks on Node 24.19.0. This checkpoint adds scenario-plan validation across 520 authored hypothetical offers, unit/quantity/price-basis adversarial cases, minimum-order persistence through the authenticated API and actual isolated PostgreSQL, bounded hypothetical AI guidance, runtime-asset configuration coverage, and distinct statistical review helpers for precision and offer-level buyer finding.
+
+The workbook's six sheets were rendered and inspected, its five data tables and row counts checked, and its summary formulas recalculated without detected spreadsheet errors. Spreadsheet QA is not application browser QA. The ten stress cases remain challenge specifications; the suite does not claim all ten underlying capabilities are implemented end to end.
+
+See `docs/PULL-V2-530-SCENARIO-LAB.md` and `research/scenario-lab/README.md` for sources, implementation limits and reproduction. No real buyer outcomes, provider calls, migration, deployment or outreach were used in this checkpoint. Cloud bundling, live provider behavior, independent pilot evidence and the broader production gaps above remain unassessed.

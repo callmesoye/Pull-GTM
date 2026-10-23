@@ -9,7 +9,7 @@ const clean=(value,max,label)=>{
   return result;
 };
 const optional=(value,max,label)=>value===undefined||value===null||value===''?null:clean(value,max,label);
-const fields=new Set(['product','location','price','condition','quantity','delivery','model','year','variant','material','capacity','service_scope','category']);
+const fields=new Set(['product','location','price','condition','quantity','minimum_order','delivery','model','year','variant','material','capacity','service_scope','category']);
 const words=value=>value.toLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
 const containsPhrase=(text,phrase)=>(' '+words(text).join(' ')+' ').includes(' '+words(phrase).join(' ')+' ');
 const claimsFor=(values,origin,sourceRef)=>Object.entries(values).filter(([,value])=>value!==null).map(([field,value])=>({field,value,origin,sourceRef}));

@@ -29,10 +29,21 @@
   ],
   "functions": {
     "api/ai.js": {
-      "maxDuration": 120
+      "maxDuration": 120,
+      "includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"
     },
     "api/discovery.js": {
-      "maxDuration": 60
-    }
+      "maxDuration": 60,
+      "includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"
+    },
+    "api/session.js": {"includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"},
+    "api/agents.js": {"includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"},
+    "api/profile.js": {"includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"},
+    "api/offers.js": {"includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"},
+    "api/workspace.js": {"includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"},
+    "api/channels.js": {"includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"},
+    "api/buyer-requests.js": {"includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"},
+    "api/agent-chat.js": {"includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"},
+    "api/buyer-reviews.js": {"includeFiles": "research/scenario-lab/{seeds.txt,mechanisms.json}"}
   }
 }

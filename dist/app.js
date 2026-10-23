@@ -77,7 +77,7 @@ document.addEventListener('submit',async event=>{
   if(offerState.busy)return;
   if(!cloud.user||!cloud.verified){account();return;}
   const data=new FormData(event.target),fields={};
-  for(const name of ['product','location','price','condition','quantity','delivery','category']){const value=String(data.get(name)||'').trim();if(value)fields[name]=value;}
+  for(const name of ['product','location','price','condition','quantity','minimum_order','delivery','category']){const value=String(data.get(name)||'').trim();if(value)fields[name]=value;}
   const draft={id:offerState.draft?.id||crypto.randomUUID(),version:offerState.draft?.version||0,fields,exactTerm:String(data.get('exactTerm')||fields.product||'').trim()};
   const ticket=accountGuard.ticket();
   offerLoadEpoch++;

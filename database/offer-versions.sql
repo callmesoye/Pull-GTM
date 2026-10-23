@@ -28,7 +28,7 @@ begin
  or p_exact_terms is null or jsonb_typeof(p_exact_terms)<>'array' then raise exception 'Invalid offer' using errcode='22023';end if;
  if jsonb_array_length(p_exact_terms) not between 1 and 6 then raise exception 'Invalid exact terms' using errcode='22023';end if;
  for pair in select * from jsonb_each(p_fields) loop
-  if pair.key not in ('product','location','price','condition','quantity','delivery','model','year','variant','material','capacity','service_scope','category')
+  if pair.key not in ('product','location','price','condition','quantity','minimum_order','delivery','model','year','variant','material','capacity','service_scope','category')
   or jsonb_typeof(pair.value) not in ('string','null')
   or (jsonb_typeof(pair.value)='string' and (length(btrim(pair.value #>> '{}'))<1 or length(pair.value #>> '{}')>case pair.key when 'product' then 500 when 'location' then 120 else 250 end))
   then raise exception 'Invalid offer fields' using errcode='22023';end if;
