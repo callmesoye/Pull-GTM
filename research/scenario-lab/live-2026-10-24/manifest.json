@@ -1,0 +1,31 @@
+{
+  "version": 2,
+  "method": "One individually attributed external public-web search per hypothetical seller case, followed by feedback-generated buyer-job searches for zero-observation cases and one representative per sector. At most the first five parsed search sources per query were retained. Captured excerpts were assessed through PULL source policy and observation logic; this is not a live production-provider or end-to-end buyer-finding evaluation.",
+  "limitations": [
+    "Search results can be irrelevant, stale, seller advertisements, job listings or incomplete.",
+    "Request publication dates were not established by this pass.",
+    "Policy admissibility, lexical acceptance and recovered observations are not independent relevance, buyer-finding or private-ownership verification.",
+    "Case products, seller situations, buyer jobs and triggers remain hypothetical.",
+    "No outreach, buyer response or transaction was executed.",
+    "Adaptive selection is nonrandom and cannot establish a causal performance improvement.",
+    "Only the queries in the recorded first and adaptive passes were executed; other suggestions remain unexecuted."
+  ],
+  "summary": {
+    "checkedDate": "2026-10-24",
+    "cases": 520,
+    "executedSearches": 656,
+    "firstPassSearches": 520,
+    "adaptiveSearches": 136,
+    "retainedTopSources": 3270,
+    "uniquePolicyAdmissibleSources": 2794,
+    "policyExcludedRetainedSources": 369,
+    "casesWithMachineAcceptedObservations": 428,
+    "machinePossibleRequestCues": 0,
+    "recoveredLexicalObservationCases": 58,
+    "adaptiveMachinePossibleRequestCues": 0,
+    "failedSearches": 0,
+    "confirmedBuyers": 0,
+    "independentRelevancePrecision": null,
+    "buyerFindingRate": null
+  }
+}

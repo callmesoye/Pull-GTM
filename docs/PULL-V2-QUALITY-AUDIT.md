@@ -55,3 +55,9 @@ On 23 October 2026 the expanded local suite passed **527 tests**, with zero fail
 The workbook's six sheets were rendered and inspected, its five data tables and row counts checked, and its summary formulas recalculated without detected spreadsheet errors. Spreadsheet QA is not application browser QA. The ten stress cases remain challenge specifications; the suite does not claim all ten underlying capabilities are implemented end to end.
 
 See `docs/PULL-V2-530-SCENARIO-LAB.md` and `research/scenario-lab/README.md` for sources, implementation limits and reproduction. No real buyer outcomes, provider calls, migration, deployment or outreach were used in this checkpoint. Cloud bundling, live provider behavior, independent pilot evidence and the broader production gaps above remain unassessed.
+
+## Later checkpoint: actual discovery research, 24 October 2026
+
+The expanded local suite passes **535 tests**, with zero failures, skips, cancellations or todos, plus syntax and whitespace checks on Node 24.19.0. New coverage tests actual initial-to-refined research-tool behavior, downstream business-source discovery, source ordering, generic-word rejection, retail-copy interpretation, original-check allocation and the 520 attributed research records. The five-sheet live-discovery workbook was rendered and inspected; its summary formulas and record counts were checked.
+
+Separately from synthetic tests, 656 external public-web searches were performed across 520 hypothetical seller cases, including 136 feedback-generated adaptive queries; nine selected original-content checks include two failed fetches. This is not a live production-provider/model benchmark. No buyer response, independent relevance score, 98% performance or transaction is established. See `docs/PULL-V2-LIVE-DISCOVERY-2026-10-24.md` for the method, actual findings and remaining gaps. No deployment, live migration or outreach was performed.

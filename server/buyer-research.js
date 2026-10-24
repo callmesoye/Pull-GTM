@@ -8,8 +8,16 @@ const words=value=>clean(value).toLowerCase().match(/[\p{L}\p{N}]+/gu)||[];
 const hasPhrase=(text,phrase)=>(' '+words(text).join(' ')+' ').includes(' '+words(phrase).join(' ')+' ');
 const requestPattern=/\b(?:looking for|searching for|want(?:ed)? to buy|need to buy|seeking (?:a |an )?(?:supplier|dealer|seller)|request for quotation|buying request|in search of)\b/giu;
 const closedPattern=/\b(?:no longer (?:looking|needed|available)|request (?:closed|fulfilled|cancelled|canceled)|already (?:bought|purchased)|found (?:a |the )?(?:car|supplier|seller))\b/iu;
-const salePattern=/\b(?:for sale|selling my|we sell|cars? available|buy now|available for purchase)\b/iu;
+const salePattern=/\b(?:for sale|selling my|we sell|cars? available|buy now|available for purchase|now in stock|place your order|add to cart)\b/iu;
+const genericRouteWords=new Set('buyer buyers request requests company companies business businesses private commercial professional professionals team manager staff owner lead purchasing procurement coordinator supplier suppliers current confirmed authorized verified'.split(' '));
 const priceResearchPattern=/\b(?:what (?:is|s) the price|how much (?:is|does)|dream car|love this car|wish i (?:had|could))\b/iu;
+const tierRank={possible_request:3,buying_route:2,market_context:1};
+export function compareBuyerSources(a,b){
+  return tierRank[b.kind]-tierRank[a.kind]
+    ||Number(Boolean(a.excluded_as_request))-Number(Boolean(b.excluded_as_request))
+    ||Number(b.location_status==='source-asserted')-Number(a.location_status==='source-asserted')
+    ||a.title.localeCompare(b.title);
+}
 
 function boundedString(value,min,max,label){
   if(typeof value!=='string')throw new Error('Invalid '+label+'.');
@@ -43,7 +51,7 @@ export function assessBuyerObservation(page,input,hypothesis,{now=new Date()}={}
   const source=researchSourcePage(page);if(!source)return null;
   const text=source.title+' '+source.description;
   const matchedTerms=input.productTerms.filter(term=>hasPhrase(text,term));
-  const routeTerms=hypothesis.keywords.filter(term=>hasPhrase(text,term));
+  const routeTerms=hypothesis.keywords.filter(term=>words(term).some(word=>!genericRouteWords.has(word))&&hasPhrase(text,term));
   if(!matchedTerms.length&&!routeTerms.length)return null;
   const locationMatched=hasPhrase(text,input.location);
   const published=typeof page.published_at==='string'&&/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(page.published_at)?new Date(page.published_at):null;
@@ -152,7 +160,7 @@ export async function discoverBuyerRoutes(raw,{provider,key,maxQueries=8,transpo
     }
     trace.push(entry);
   }
-  const all=[...sources.values()].sort((a,b)=>rank[b.kind]-rank[a.kind]||a.title.localeCompare(b.title));
+  const all=[...sources.values()].sort(compareBuyerSources);
   const opportunities=all.slice(0,input.limit);
   const summary={sources:opportunities.length,possibleRequests:opportunities.filter(x=>x.kind==='possible_request').length,buyingRoutes:opportunities.filter(x=>x.kind==='buying_route').length,marketContext:opportunities.filter(x=>x.kind==='market_context').length,confirmedBuyers:0};
   const partial=stopReason!=='routes_exhausted'||trace.some(t=>t.status!=='complete');
@@ -171,7 +179,7 @@ export function mergeBuyerResearch(first,next){
     const previous=sources.get(item.source_url);
     sources.set(item.source_url,previous?{...(rank[item.kind]>rank[previous.kind]?item:previous),hypothesis_ids:[...new Set([...previous.hypothesis_ids,...item.hypothesis_ids])]}:item);
   }
-  const opportunities=[...sources.values()].sort((a,b)=>rank[b.kind]-rank[a.kind]||a.title.localeCompare(b.title)).slice(0,first.input.limit);
+  const opportunities=[...sources.values()].sort(compareBuyerSources).slice(0,first.input.limit);
   const trace=[...first.trace,...next.trace],keys=new Set([...(first.sourceKeys||first.opportunities.map(x=>x.source_url)),...(next.sourceKeys||next.opportunities.map(x=>x.source_url))]);
   const result={...next,input:{...first.input,hypotheses:[...first.input.hypotheses,...next.input.hypotheses]},opportunities,trace,requestsUsed:first.requestsUsed+next.requestsUsed,
     summary:{sources:opportunities.length,possibleRequests:opportunities.filter(x=>x.kind==='possible_request').length,buyingRoutes:opportunities.filter(x=>x.kind==='buying_route').length,marketContext:opportunities.filter(x=>x.kind==='market_context').length,confirmedBuyers:0},
